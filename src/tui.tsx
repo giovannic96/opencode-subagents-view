@@ -1,6 +1,7 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { For, createSignal, Show } from "solid-js"
 import { countActiveChildSessions, trackChildSessions } from "./child-sessions-tracker"
+import { getChildStatusMeta } from "./child-sessions-ui"
 import type { ChildSessionRecords } from "./child-sessions-types"
 
 const id = "subagent-view"
@@ -43,11 +44,20 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           <b>Subagents</b> ({childSessionCount()})
         </text>
         <For each={childSessionRows()}>
-          {(child) => (
-            <text fg={theme().textMuted}>
-              - {child.label} ({child.status})
-            </text>
-          )}
+          {(child) => {
+            const statusMeta = getChildStatusMeta(child.status)
+            const currentTheme = theme()
+            const fg =
+              statusMeta.tone === "success"
+                ? currentTheme.success
+                : statusMeta.tone === "warning"
+                  ? currentTheme.warning
+                  : statusMeta.tone === "error"
+                    ? currentTheme.error
+                    : currentTheme.textMuted
+
+            return <text fg={fg}>{statusMeta.icon} {child.label}</text>
+          }}
         </For>
       </box>
     </Show>

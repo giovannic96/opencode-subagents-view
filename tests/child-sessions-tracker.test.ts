@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { countActiveChildSessions, isChildOf, trackChildSessions, updateChildSessionRecords } from "../src/child-sessions-tracker"
+import { formatChildSessionLabel, getChildStatusMeta } from "../src/child-sessions-ui"
 import type { ChildSessionEvent } from "../src/child-sessions-types"
 import type { ChildSessionEventType, ChildSessionRecord, ChildSessionRecords } from "../src/child-sessions-types"
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui"
@@ -104,6 +105,26 @@ describe("countActiveChildSessions", () => {
       ["ses_b", { id: "ses_b", label: "[unknown] Cooking stuff", status: "idle" as const }],
     ])
     expect(countActiveChildSessions(records)).toBe(1)
+  })
+})
+
+describe("getChildStatusMeta", () => {
+  test("maps statuses to icons and tones", () => {
+    expect(getChildStatusMeta("active")).toEqual({ icon: "●", tone: "success" })
+    expect(getChildStatusMeta("retry")).toEqual({ icon: "◐", tone: "warning" })
+    expect(getChildStatusMeta("error")).toEqual({ icon: "✖", tone: "error" })
+    expect(getChildStatusMeta("idle")).toEqual({ icon: "○", tone: "muted" })
+  })
+})
+
+describe("formatChildSessionLabel", () => {
+  test("uses agent and title with fallback values", () => {
+    expect(formatChildSessionLabel({ id: "ses_a", agent: "explore", title: "Inspect plugin purpose" })).toBe("[explore] Inspect plugin purpose")
+    expect(formatChildSessionLabel({ id: "ses_b" })).toBe("[unknown] Cooking stuff")
+  })
+
+  test("strips the trailing subagent marker from the title", () => {
+    expect(formatChildSessionLabel({ id: "ses_a", agent: "explore", title: "Inspect tests (@explore subagent)" })).toBe("[explore] Inspect tests")
   })
 })
 
@@ -226,10 +247,10 @@ describe("updateChildSessionRecords", () => {
     expect(after.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
-  test("session.next.step.failed marks a tracked child idle", () => {
+  test("session.next.step.failed marks a tracked child error", () => {
     const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, stepFailedEvent("ses_a"))
-    expect(after.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
+    expect(after.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "error" })
   })
 
 })

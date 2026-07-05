@@ -8,19 +8,16 @@ import type {
 } from "./child-sessions-types"
 import { CHILD_SESSION_EVENT_TYPES } from "./child-sessions-types"
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui"
+import { formatChildSessionLabel } from "./child-sessions-ui"
 
 export function isChildOf(session: ChildSession, parentSessionID: string): boolean {
   return session.parentID === parentSessionID
 }
 
 function toRecordStatus(sessionStatus: ChildSessionStatus["type"]): ChildSessionRecordStatus {
-  return sessionStatus === "idle" ? "idle" : "active"
-}
-
-function getChildSessionLabel(session: ChildSession): string {
-  const agent = session.agent ?? "unknown"
-  const title = (session.title ?? "Cooking stuff").replace(/\s*\(@[^)]* subagent\)$/u, "")
-  return `[${agent}] ${title}`
+  if (sessionStatus === "idle") return "idle"
+  if (sessionStatus === "retry") return "retry"
+  return "active"
 }
 
 function addOrIgnoreChild(
@@ -31,7 +28,7 @@ function addOrIgnoreChild(
   if (!isChildOf(session, parentSessionID) || records.has(session.id)) return records
 
   const next = new Map(records)
-  next.set(session.id, { id: session.id, label: getChildSessionLabel(session), status: "active" })
+  next.set(session.id, { id: session.id, label: formatChildSessionLabel(session), status: "active" })
   return next
 }
 
@@ -88,7 +85,7 @@ export function updateChildSessionRecords(
 
     case "session.next.step.ended":
     case "session.next.step.failed": {
-      return setChildStatus(records, event.properties.sessionID, "idle")
+      return setChildStatus(records, event.properties.sessionID, event.type === "session.next.step.failed" ? "error" : "idle")
     }
 
     case "session.created":

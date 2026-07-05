@@ -62,7 +62,7 @@ export type ChildSessionEvent =
       }
     }
 
-export type ChildSessionRecordStatus = "active" | "idle"
+export type ChildSessionRecordStatus = "active" | "idle" | "retry" | "error"
 
 export type ChildSessionRecord = {
   id: string
