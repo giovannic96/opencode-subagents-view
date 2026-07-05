@@ -1,5 +1,5 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { createSignal, Show } from "solid-js"
+import { For, createSignal, Show } from "solid-js"
 import { countActiveChildSessions, trackChildSessions } from "./child-sessions-tracker"
 import type { ChildSessionRecords } from "./child-sessions-types"
 
@@ -8,14 +8,14 @@ const id = "subagent-view"
 // Cached per session id instead of created fresh per render: repeated render
 // calls must reuse existing state, not restart it. See README ("A real bug
 // this project hit") for why.
-const childSessionCounts = new Map<string, () => number>()
+const childSessionRecords = new Map<string, () => ChildSessionRecords>()
 
-export function getOrCreateChildSessionCount(
+export function getOrCreateChildSessions(
   api: TuiPluginApi,
   parentSessionID: string,
   onDispose: (fn: () => void) => void,
-): () => number {
-  const cached = childSessionCounts.get(parentSessionID)
+): () => ChildSessionRecords {
+  const cached = childSessionRecords.get(parentSessionID)
   if (cached) return cached
 
   const [childSessions, setChildSessions] = createSignal<ChildSessionRecords>(new Map())
@@ -23,17 +23,18 @@ export function getOrCreateChildSessionCount(
 
   onDispose(() => {
     unsubscribe()
-    childSessionCounts.delete(parentSessionID)
+    childSessionRecords.delete(parentSessionID)
   })
 
-  const childSessionCount = () => countActiveChildSessions(childSessions())
-  childSessionCounts.set(parentSessionID, childSessionCount)
-  return childSessionCount
+  childSessionRecords.set(parentSessionID, childSessions)
+  return childSessions
 }
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
-  const childSessionCount = getOrCreateChildSessionCount(props.api, props.session_id, props.api.lifecycle.onDispose)
+  const childSessions = getOrCreateChildSessions(props.api, props.session_id, props.api.lifecycle.onDispose)
+  const childSessionCount = () => countActiveChildSessions(childSessions())
+  const childSessionRows = () => Array.from(childSessions().values()).sort((a, b) => a.id.localeCompare(b.id))
 
   return (
     <Show when={childSessionCount() > 0}>
@@ -41,6 +42,13 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <text fg={theme().text}>
           <b>Subagents</b> ({childSessionCount()})
         </text>
+        <For each={childSessionRows()}>
+          {(child) => (
+            <text fg={theme().textMuted}>
+              - {child.id} ({child.status})
+            </text>
+          )}
+        </For>
       </box>
     </Show>
   )

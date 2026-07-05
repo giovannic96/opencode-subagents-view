@@ -57,13 +57,14 @@ Same caveat applies: put this in `tui.json`/`tui.jsonc`, not `opencode.json`.
 This is a plain TUI plugin, not a fork or patch of opencode itself. It hooks into the same `sidebar_content` slot that the built-in Context, LSP, MCP, and Todo sections use, so it renders as just another section in the existing sidebar rather than a separate window or overlay.
 
 > **Status**: being built incrementally, one small, tested, verified-in-a-real-session step at a time. Currently implemented and verified:
-> - A "Subagents (N)" line appears in the sidebar as soon as the current session has at least one direct child session (e.g. one spawned via the `task` tool), and disappears again once it has none. It updates live as subagents finish and go idle, no restart needed.
+> - A "Subagents (N)" section appears in the sidebar as soon as the current session has at least one direct child session (e.g. one spawned via the `task` tool), and disappears again once it has none. It updates live as subagents finish and go idle, no restart needed.
+> - The section now renders one row per tracked child, showing the child session id and current status.
 >
-> Not yet implemented: per-subagent rows, status (busy/done/error), current activity, the auto-hide grace period after a subagent finishes, and colors. See the repo's commit history for what's landed so far.
+> Not yet implemented: friendly labels, current activity, the auto-hide grace period after a subagent finishes, and colors. See the repo's commit history for what's landed so far.
 
 ### Code layout
 
-- `src/child-sessions-tracker.ts`: pure session membership logic plus the live session subscription. Plain data in, data out.
+- `src/child-sessions-tracker.ts`: session membership logic plus the live session subscription. Plain data in, data out.
 - `src/child-sessions-types.ts`: shared child-session and event types.
 - `src/tui.tsx`: the only file that touches solid-js (`createSignal`) and JSX, kept as thin as possible on purpose (see "Why all the solid-js code lives in one file" below). Registers the section at `order: 350` in the shared `sidebar_content` slot (built-ins: Context=100, MCP=200, LSP=300, Todo=400, Files=500), placing it right after LSP, before Todo.
 

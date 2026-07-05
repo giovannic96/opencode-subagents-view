@@ -1,6 +1,7 @@
 import { createEffect, createRoot } from "solid-js"
 import { describe, expect, test } from "bun:test"
-import { getOrCreateChildSessionCount } from "../src/tui"
+import { getOrCreateChildSessions } from "../src/tui"
+import { countActiveChildSessions } from "../src/child-sessions-tracker"
 import type { ChildSessionEvent, ChildSessionEventType, ChildSessionRecord, ChildSessionRecords } from "../src/child-sessions-types"
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui"
 
@@ -69,12 +70,12 @@ function createUpdateRecorder(initial: ChildSessionRecords = new Map<string, Chi
   }
 }
 
-describe("getOrCreateChildSessionCount", () => {
+describe("getOrCreateChildSessions", () => {
   test("starts at 0 before any live events arrive", () => {
     const sessionID = uniqueSessionID()
     const { api } = createMockApi()
-    const count = getOrCreateChildSessionCount(api, sessionID, createDisposeCollector().onDispose)
-    expect(count()).toBe(0)
+    const records = getOrCreateChildSessions(api, sessionID, createDisposeCollector().onDispose)
+    expect(countActiveChildSessions(records())).toBe(0)
   })
 
   // Regression test for a real bug that hung a real opencode session; see
@@ -84,12 +85,12 @@ describe("getOrCreateChildSessionCount", () => {
     const { api } = createMockApi()
     const { onDispose } = createDisposeCollector()
 
-    const first = getOrCreateChildSessionCount(api, sessionID, onDispose)
-    const second = getOrCreateChildSessionCount(api, sessionID, onDispose)
+    const first = getOrCreateChildSessions(api, sessionID, onDispose)
+    const second = getOrCreateChildSessions(api, sessionID, onDispose)
 
     expect(second).toBe(first)
     await flush()
-    expect(first()).toBe(0)
+    expect(countActiveChildSessions(first())).toBe(0)
   })
 
   test("different sessions get independent state", async () => {
@@ -99,12 +100,12 @@ describe("getOrCreateChildSessionCount", () => {
     const { api: apiB } = createMockApi()
     const { onDispose } = createDisposeCollector()
 
-    const countA = getOrCreateChildSessionCount(apiA, sessionA, onDispose)
-    const countB = getOrCreateChildSessionCount(apiB, sessionB, onDispose)
+    const countA = getOrCreateChildSessions(apiA, sessionA, onDispose)
+    const countB = getOrCreateChildSessions(apiB, sessionB, onDispose)
 
     await flush()
-    expect(countA()).toBe(0)
-    expect(countB()).toBe(0)
+    expect(countActiveChildSessions(countA())).toBe(0)
+    expect(countActiveChildSessions(countB())).toBe(0)
   })
 
   test("idle children stay tracked while the active count drops", async () => {
@@ -116,9 +117,9 @@ describe("getOrCreateChildSessionCount", () => {
 
     createRoot((d) => {
       dispose = d
-      const count = getOrCreateChildSessionCount(api, sessionID, onDispose)
+      const records = getOrCreateChildSessions(api, sessionID, onDispose)
       createEffect(() => {
-        seen.push(count())
+        seen.push(countActiveChildSessions(records()))
       })
     })
 
@@ -141,7 +142,7 @@ describe("getOrCreateChildSessionCount", () => {
     const { api, subscriberCount } = createMockApi()
     const { onDispose, disposeAll } = createDisposeCollector()
 
-    getOrCreateChildSessionCount(api, sessionID, onDispose)
+    getOrCreateChildSessions(api, sessionID, onDispose)
     expect(subscriberCount()).toBeGreaterThan(0)
 
     disposeAll()
@@ -162,9 +163,9 @@ describe("getOrCreateChildSessionCount", () => {
 
     createRoot((d) => {
       dispose = d
-      const count = getOrCreateChildSessionCount(api, sessionID, onDispose)
+      const records = getOrCreateChildSessions(api, sessionID, onDispose)
       createEffect(() => {
-        seen.push(count())
+        seen.push(countActiveChildSessions(records()))
       })
     })
 

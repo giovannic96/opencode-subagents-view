@@ -291,4 +291,5 @@ describe("trackChildSessions", () => {
     emit({ type: "session.created", properties: { sessionID: "ses_a", info: { id: "ses_a", parentID: PARENT } } })
     expect(recorder.current.size).toBe(0)
   })
+
 })
