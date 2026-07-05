@@ -1,6 +1,7 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createSignal, Show } from "solid-js"
-import { trackChildSessions } from "./session-children-tracker"
+import { countActiveChildSessions, trackChildSessions } from "./child-sessions-tracker"
+import type { ChildSessionRecords } from "./child-sessions-types"
 
 const id = "subagent-view"
 
@@ -17,15 +18,15 @@ export function getOrCreateChildSessionCount(
   const cached = childSessionCounts.get(parentSessionID)
   if (cached) return cached
 
-  const [childIds, setChildIds] = createSignal<ReadonlySet<string>>(new Set())
-  const unsubscribe = trackChildSessions(api, parentSessionID, setChildIds)
+  const [childSessions, setChildSessions] = createSignal<ChildSessionRecords>(new Map())
+  const unsubscribe = trackChildSessions(api, parentSessionID, setChildSessions)
 
   onDispose(() => {
     unsubscribe()
     childSessionCounts.delete(parentSessionID)
   })
 
-  const childSessionCount = () => childIds().size
+  const childSessionCount = () => countActiveChildSessions(childSessions())
   childSessionCounts.set(parentSessionID, childSessionCount)
   return childSessionCount
 }

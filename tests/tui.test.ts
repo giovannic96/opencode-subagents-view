@@ -1,7 +1,7 @@
 import { createEffect, createRoot } from "solid-js"
 import { describe, expect, test } from "bun:test"
 import { getOrCreateChildSessionCount } from "../src/tui"
-import type { ChildSession, ChildSessionEvent, ChildSessionEventType } from "../src/session-children"
+import type { ChildSessionEvent, ChildSessionEventType, ChildSessionRecord, ChildSessionRecords } from "../src/child-sessions-types"
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui"
 
 let sessionCounter = 0
@@ -17,7 +17,10 @@ function createMockApi() {
 
   const api = {
     event: {
-      on(type: ChildSessionEventType, handler: (event: ChildSessionEvent) => void) {
+      on(
+        type: ChildSessionEventType,
+        handler: (event: ChildSessionEvent) => void,
+      ) {
         const set = handlers.get(type) ?? new Set()
         set.add(handler)
         handlers.set(type, set)
@@ -53,6 +56,18 @@ function createDisposeCollector() {
 }
 
 const flush = () => Promise.resolve().then(() => Promise.resolve())
+
+function createUpdateRecorder(initial: ChildSessionRecords = new Map<string, ChildSessionRecord>()) {
+  let current: ChildSessionRecords = initial
+  return {
+    update: (reducer: (current: ChildSessionRecords) => ChildSessionRecords) => {
+      current = reducer(current)
+    },
+    get current() {
+      return current
+    },
+  }
+}
 
 describe("getOrCreateChildSessionCount", () => {
   test("starts at 0 before any live events arrive", () => {
@@ -92,6 +107,35 @@ describe("getOrCreateChildSessionCount", () => {
     expect(countB()).toBe(0)
   })
 
+  test("idle children stay tracked while the active count drops", async () => {
+    const sessionID = uniqueSessionID()
+    const seen: number[] = []
+    const { api, emit } = createMockApi()
+    const { onDispose } = createDisposeCollector()
+    let dispose!: () => void
+
+    createRoot((d) => {
+      dispose = d
+      const count = getOrCreateChildSessionCount(api, sessionID, onDispose)
+      createEffect(() => {
+        seen.push(count())
+      })
+    })
+
+    await flush()
+    expect(seen).toEqual([0])
+
+    emit({ type: "session.created", properties: { sessionID: "ses_a", info: { id: "ses_a", parentID: sessionID } } })
+    await flush()
+    expect(seen).toEqual([0, 1])
+
+    emit({ type: "session.next.step.ended", properties: { sessionID: "ses_a" } })
+    await flush()
+    expect(seen).toEqual([0, 1, 0])
+
+    dispose()
+  })
+
   test("disposing unsubscribes all event handlers (no leaks)", () => {
     const sessionID = uniqueSessionID()
     const { api, subscriberCount } = createMockApi()
@@ -109,7 +153,7 @@ describe("getOrCreateChildSessionCount", () => {
   // reactive subscriber from rerunning). Not a test of the solid-js "node"
   // export condition patch, bun test's own resolution isn't affected by
   // that either way (verified separately).
-  test("a reactive subscriber (createEffect) actually reruns as the count changes", async () => {
+  test("a reactive subscriber (createEffect) reruns as the count rises and falls", async () => {
     const sessionID = uniqueSessionID()
     const seen: number[] = []
     const { api, emit } = createMockApi()
@@ -135,9 +179,13 @@ describe("getOrCreateChildSessionCount", () => {
     await flush()
     expect(seen).toEqual([0, 1, 2])
 
-    emit({ type: "session.deleted", properties: { sessionID: "ses_a", info: { id: "ses_a", parentID: sessionID } } })
+    emit({ type: "session.next.step.ended", properties: { sessionID: "ses_b" } })
     await flush()
     expect(seen).toEqual([0, 1, 2, 1])
+
+    emit({ type: "session.deleted", properties: { sessionID: "ses_a", info: { id: "ses_a", parentID: sessionID } } })
+    await flush()
+    expect(seen).toEqual([0, 1, 2, 1, 0])
 
     dispose()
   })

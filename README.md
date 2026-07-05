@@ -57,14 +57,14 @@ Same caveat applies: put this in `tui.json`/`tui.jsonc`, not `opencode.json`.
 This is a plain TUI plugin, not a fork or patch of opencode itself. It hooks into the same `sidebar_content` slot that the built-in Context, LSP, MCP, and Todo sections use, so it renders as just another section in the existing sidebar rather than a separate window or overlay.
 
 > **Status**: being built incrementally, one small, tested, verified-in-a-real-session step at a time. Currently implemented and verified:
-> - A "Subagents (N)" line appears in the sidebar as soon as the current session has at least one direct child session (e.g. one spawned via the `task` tool), and disappears again once it has none. It updates live as subagents start and finish, no restart needed.
+> - A "Subagents (N)" line appears in the sidebar as soon as the current session has at least one direct child session (e.g. one spawned via the `task` tool), and disappears again once it has none. It updates live as subagents finish and go idle, no restart needed.
 >
 > Not yet implemented: per-subagent rows, status (busy/done/error), current activity, the auto-hide grace period after a subagent finishes, and colors. See the repo's commit history for what's landed so far.
 
 ### Code layout
 
-- `src/session-children.ts`: pure, framework-free logic (no solid-js, no opentui, no network calls) for deciding which sessions count as children of the current one. Plain data in, data out.
-- `src/session-children-tracker.ts`: subscribes to session events and calls a plain callback each time the set of tracked children might have changed. Still no solid-js, the callback is just a function, not a real signal, so this is testable with a mock in place of a signal setter.
+- `src/child-sessions-tracker.ts`: pure session membership logic plus the live session subscription. Plain data in, data out.
+- `src/child-sessions-types.ts`: shared child-session and event types.
 - `src/tui.tsx`: the only file that touches solid-js (`createSignal`) and JSX, kept as thin as possible on purpose (see "Why all the solid-js code lives in one file" below). Registers the section at `order: 350` in the shared `sidebar_content` slot (built-ins: Context=100, MCP=200, LSP=300, Todo=400, Files=500), placing it right after LSP, before Todo.
 
 ### Why all the solid-js code lives in one file
@@ -73,7 +73,7 @@ Earlier in this project, `createSignal`/`createEffect` usage was split across tw
 
 ### Development
 
-- `npm test` (or `bun test`) runs the test suite. Logic that doesn't need a real terminal (session-tracking rules) is unit-tested directly; the plugin's reactive wiring itself is also tested in isolation using solid-js's `createRoot`, without needing a real opencode instance.
+- `npm test` (or `bun test`) runs the test suite. Session-tracking rules and the plugin's reactive wiring are tested together in `tests/child-sessions-tracker.test.ts` using plain mocks and solid-js's `createRoot`, without needing a real opencode instance.
 - `npm run typecheck` runs `tsc --noEmit`.
 
 ### A real bug this project hit, and how it's guarded against now
@@ -82,7 +82,7 @@ An early version of the "Subagents (N)" line looked correct in isolated testing 
 
 The fix (see `getOrCreateChildSessionCount` in `src/tui.tsx`) caches state per session id for the plugin's lifetime instead of per render, so only the first call for a given session ever does real work; later calls just read the already-settled state, which can't restart the cycle. `tests/tui.test.ts` has a test that specifically pins this down, and the fix was also re-verified against the original real reproduction (a live `task`-tool delegation, not just a synthetic test) before being considered fixed.
 
-The current implementation starts from zero and only counts live child-session events. We removed the initial `client.session.children()` seed because it included historical children and made the sidebar start too high.
+The current implementation keeps a record for each child session. Active children count toward the sidebar number, idle children stay visible for future UI work, and deleted children are removed entirely.
 
 One subtle but important detail: the cache does **not** store the count itself. It stores the function returned by `getOrCreateChildSessionCount`, and that function closes over a Solid signal. The signal changes when `setChildIds(...)` runs, but the cached function stays the same, so every later call to `childSessionCount()` still reads the latest number. That is why caching the function is enough, even though the cache entry itself is only written once.
 
@@ -91,12 +91,14 @@ The full flow is:
 1. `View(...)` renders for a specific `session_id`.
 2. `getOrCreateChildSessionCount(...)` checks whether that session already has a cached getter.
 3. On the first render for that session, it creates a Solid signal with an empty `Set` of child ids.
-4. `trackChildSessions(...)` subscribes to live `session.created`, `session.updated`, and `session.deleted` events.
+4. `trackChildSessions(...)` subscribes to live `session.created`, `session.updated`, `session.status`, `session.idle`, `session.deleted`, `session.next.step.ended`, and `session.next.step.failed` events.
 5. The live events are handled a little differently:
-   - `session.created`: if the new session belongs to the current parent, its id is added to the set.
-   - `session.updated`: if the session still belongs to the current parent, its id stays in the set; if it no longer belongs, it is removed.
-   - `session.deleted`: if the deleted session id was in the set, it is removed.
-   - Those three event names are defined once in `src/session-children.ts` and the type is derived from that list, so the code does not repeat the union in multiple places.
+   - `session.created`: if the new session belongs to the current parent, it is added as `active`.
+   - `session.updated`: if the session still belongs to the current parent and is already tracked, it stays in whatever state it already had; if it no longer belongs, it is removed.
+   - `session.status` and `session.idle`: when a tracked child becomes idle, it stays in the map but is marked `idle`.
+   - `session.next.step.ended` and `session.next.step.failed`: when a tracked child finishes a step, it is marked `idle`.
+   - `session.deleted`: if the deleted session id was in the map, it is removed.
+   - Those event names are defined once in `src/child-sessions-types.ts` and the type is derived from that list, so the code does not repeat the union in multiple places.
 6. Whenever one of those cases changes the set, `setChildIds(...)` replaces the signal with a new set.
 7. Solid notices that `childIds()` changed, so `childSessionCount()` is re-evaluated.
 8. The sidebar now shows the updated `Subagents (N)` value.
@@ -113,8 +115,10 @@ Suppose the current session is `A`.
 - A `session.created` event arrives.
 - `updateChildSessionMembership(...)` sees that `B` belongs to `A`, so it adds `B` to the set.
 - The count changes from `0` to `1`, and the sidebar shows `Subagents (1)`.
-- If `B` is later updated but still belongs to `A`, nothing really changes except the code confirms it is still tracked.
-- If `B` is deleted, the `session.deleted` event removes it from the set.
+- If `B` later becomes idle, the `session.idle` or `session.status` event keeps it in the record map but marks it `idle`.
+- If `B` finishes a step, the `session.next.step.ended` or `session.next.step.failed` event marks it `idle`.
+- If OpenCode emits a later `session.updated` for `B`, the plugin keeps it idle instead of reactivating it.
+- If `B` is deleted, the `session.deleted` event removes it from the map.
 - The count goes back to `0`, and the sidebar hides again.
 
 ### Why there's a patch for solid-js
