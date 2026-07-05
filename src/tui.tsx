@@ -10,6 +10,7 @@ const id = "subagent-view"
 // calls must reuse existing state, not restart it. See README ("A real bug
 // this project hit") for why.
 const childSessionRecords = new Map<string, () => ChildSessionRecords>()
+const childSessionCollapsed = new Map<string, { collapsed: () => boolean; setCollapsed: (next: boolean | ((current: boolean) => boolean)) => void }>()
 
 export function getOrCreateChildSessions(
   api: TuiPluginApi,
@@ -31,34 +32,62 @@ export function getOrCreateChildSessions(
   return childSessions
 }
 
+export function getOrCreateChildSessionsCollapsed(
+  parentSessionID: string,
+  onDispose: (fn: () => void) => void,
+): [() => boolean, (next: boolean | ((current: boolean) => boolean)) => void] {
+  const cached = childSessionCollapsed.get(parentSessionID)
+  if (cached) {
+    return [cached.collapsed, cached.setCollapsed]
+  }
+
+  const [collapsed, setCollapsed] = createSignal(false)
+
+  onDispose(() => {
+    childSessionCollapsed.delete(parentSessionID)
+  })
+
+  childSessionCollapsed.set(parentSessionID, { collapsed, setCollapsed })
+  return [collapsed, setCollapsed]
+}
+
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const childSessions = getOrCreateChildSessions(props.api, props.session_id, props.api.lifecycle.onDispose)
+  const [childSessionsCollapsed, setChildSessionsCollapsed] = getOrCreateChildSessionsCollapsed(
+    props.session_id,
+    props.api.lifecycle.onDispose,
+  )
   const childSessionCount = () => countActiveChildSessions(childSessions())
   const childSessionRows = () => Array.from(childSessions().values()).sort((a, b) => a.id.localeCompare(b.id))
+  const childSessionHeader = () => (childSessionsCollapsed() ? "▶" : "▼")
 
   return (
     <Show when={childSessionRows().length > 0}>
-      <box>
+      <box
+        onMouseDown={() => setChildSessionsCollapsed((current) => !current)}
+      >
         <text fg={theme().text}>
-          <b>Subagents</b> ({childSessionCount()} active)
+          <b>{childSessionHeader()} Subagents</b> ({childSessionCount()} active)
         </text>
-        <For each={childSessionRows()}>
-          {(child) => {
-            const statusMeta = getChildStatusMeta(child.status)
-            const currentTheme = theme()
-            const fg =
-              statusMeta.tone === "success"
-                ? currentTheme.success
-                : statusMeta.tone === "warning"
-                  ? currentTheme.warning
-                  : statusMeta.tone === "error"
-                    ? currentTheme.error
-                    : currentTheme.textMuted
+        <Show when={!childSessionsCollapsed()}>
+          <For each={childSessionRows()}>
+            {(child) => {
+              const statusMeta = getChildStatusMeta(child.status)
+              const currentTheme = theme()
+              const fg =
+                statusMeta.tone === "success"
+                  ? currentTheme.success
+                  : statusMeta.tone === "warning"
+                    ? currentTheme.warning
+                    : statusMeta.tone === "error"
+                      ? currentTheme.error
+                      : currentTheme.textMuted
 
-            return <text fg={fg}>{statusMeta.icon} {child.label}</text>
-          }}
-        </For>
+              return <text fg={fg}>{statusMeta.icon} {child.label}</text>
+            }}
+          </For>
+        </Show>
       </box>
     </Show>
   )
