@@ -64,7 +64,7 @@ This is a plain TUI plugin, not a fork or patch of opencode itself. It hooks int
 ### Code layout
 
 - `src/session-children.ts`: pure, framework-free logic (no solid-js, no opentui, no network calls) for deciding which sessions count as children of the current one. Plain data in, data out.
-- `src/session-children-tracker.ts`: calls `client.session.children()` and subscribes to session events, calling a plain callback each time the set of children might have changed. Still no solid-js, the callback is just a function, not a real signal, so this is testable with a mock in place of a signal setter.
+- `src/session-children-tracker.ts`: subscribes to session events and calls a plain callback each time the set of tracked children might have changed. Still no solid-js, the callback is just a function, not a real signal, so this is testable with a mock in place of a signal setter.
 - `src/tui.tsx`: the only file that touches solid-js (`createSignal`) and JSX, kept as thin as possible on purpose (see "Why all the solid-js code lives in one file" below). Registers the section at `order: 350` in the shared `sidebar_content` slot (built-ins: Context=100, MCP=200, LSP=300, Todo=400, Files=500), placing it right after LSP, before Todo.
 
 ### Why all the solid-js code lives in one file
@@ -80,7 +80,9 @@ Earlier in this project, `createSignal`/`createEffect` usage was split across tw
 
 An early version of the "Subagents (N)" line looked correct in isolated testing (right data, no crash) but froze a real session as soon as it actually had a subagent to show. Root cause, confirmed by reproducing it deliberately: the host legitimately calls a slot's render function more than once for the same session under normal operation (observed: twice, several seconds apart). That's fine on its own, but the plugin's code created a brand new signal and kicked off a brand new `client.session.children()` request on *every single one* of those calls. Each call's freshly-empty state transitioning to "has 1 child" apparently triggered another such call, compounding into an uncontrolled feedback loop, one reproduction hit over 20,000 renders in about 26 seconds and crashed the renderer outright.
 
-The fix (see `getOrCreateChildSessionCount` in `src/tui.tsx`) caches state per session id for the plugin's lifetime instead of per render, so only the first call for a given session ever does real work; later calls just read the already-settled state, which can't restart the cycle. `tests/tui.test.ts` has a test that specifically pins this down (calling it twice for the same session must reuse state and only fetch once), and the fix was also re-verified against the original real reproduction (a live `task`-tool delegation, not just a synthetic test) before being considered fixed.
+The fix (see `getOrCreateChildSessionCount` in `src/tui.tsx`) caches state per session id for the plugin's lifetime instead of per render, so only the first call for a given session ever does real work; later calls just read the already-settled state, which can't restart the cycle. `tests/tui.test.ts` has a test that specifically pins this down, and the fix was also re-verified against the original real reproduction (a live `task`-tool delegation, not just a synthetic test) before being considered fixed.
+
+The current implementation starts from zero and only counts live child-session events. We removed the initial `client.session.children()` seed because it included historical children and made the sidebar start too high.
 
 One subtle but important detail: the cache does **not** store the count itself. It stores the function returned by `getOrCreateChildSessionCount`, and that function closes over a Solid signal. The signal changes when `setChildIds(...)` runs, but the cached function stays the same, so every later call to `childSessionCount()` still reads the latest number. That is why caching the function is enough, even though the cache entry itself is only written once.
 
@@ -89,8 +91,8 @@ The full flow is:
 1. `View(...)` renders for a specific `session_id`.
 2. `getOrCreateChildSessionCount(...)` checks whether that session already has a cached getter.
 3. On the first render for that session, it creates a Solid signal with an empty `Set` of child ids.
-4. `trackChildSessions(...)` immediately starts two things: a one-time `client.session.children(...)` request to seed the current children, and live event listeners for `session.created`, `session.updated`, and `session.deleted`.
-5. The seed data and the live events are handled a little differently:
+4. `trackChildSessions(...)` subscribes to live `session.created`, `session.updated`, and `session.deleted` events.
+5. The live events are handled a little differently:
    - `session.created`: if the new session belongs to the current parent, its id is added to the set.
    - `session.updated`: if the session still belongs to the current parent, its id stays in the set; if it no longer belongs, it is removed.
    - `session.deleted`: if the deleted session id was in the set, it is removed.
@@ -106,7 +108,7 @@ The full flow is:
 
 Suppose the current session is `A`.
 
-- At first, `client.session.children({ sessionID: "A" })` returns nothing, so the sidebar stays hidden.
+- At first, there are no live child-session events yet, so the sidebar stays hidden.
 - Later, opencode creates a new session `B` with `parentID: "A"`.
 - A `session.created` event arrives.
 - `updateChildSessionMembership(...)` sees that `B` belongs to `A`, so it adds `B` to the set.

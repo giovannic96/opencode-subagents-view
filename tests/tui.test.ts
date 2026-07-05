@@ -11,20 +11,11 @@ function uniqueSessionID() {
   return `ses_parent_${sessionCounter}`
 }
 
-/** A fake `api.client.session.children` + `api.event.on` good enough to drive the reactive wiring in isolation. */
-function createMockApi(initialChildren: readonly ChildSession[] = []) {
+/** A fake `api.event.on` good enough to drive the reactive wiring in isolation. */
+function createMockApi() {
   const handlers = new Map<ChildSessionEventType, Set<(event: ChildSessionEvent) => void>>()
-  let childrenCallCount = 0
 
   const api = {
-    client: {
-      session: {
-        async children() {
-          childrenCallCount += 1
-          return { data: initialChildren }
-        },
-      },
-    },
     event: {
       on(type: ChildSessionEventType, handler: (event: ChildSessionEvent) => void) {
         const set = handlers.get(type) ?? new Set()
@@ -47,9 +38,6 @@ function createMockApi(initialChildren: readonly ChildSession[] = []) {
       for (const set of handlers.values()) total += set.size
       return total
     },
-    getChildrenCallCount() {
-      return childrenCallCount
-    },
   }
 }
 
@@ -67,9 +55,9 @@ function createDisposeCollector() {
 const flush = () => Promise.resolve().then(() => Promise.resolve())
 
 describe("getOrCreateChildSessionCount", () => {
-  test("starts at 0 before the initial fetch resolves", () => {
+  test("starts at 0 before any live events arrive", () => {
     const sessionID = uniqueSessionID()
-    const { api } = createMockApi([{ id: "ses_child", parentID: sessionID }])
+    const { api } = createMockApi()
     const count = getOrCreateChildSessionCount(api, sessionID, createDisposeCollector().onDispose)
     expect(count()).toBe(0)
   })
@@ -78,7 +66,7 @@ describe("getOrCreateChildSessionCount", () => {
   // README("A real bug this project hit") for the full story.
   test("calling it twice for the same session reuses state and only fetches once", async () => {
     const sessionID = uniqueSessionID()
-    const { api, getChildrenCallCount } = createMockApi([{ id: "ses_child", parentID: sessionID }])
+    const { api } = createMockApi()
     const { onDispose } = createDisposeCollector()
 
     const first = getOrCreateChildSessionCount(api, sessionID, onDispose)
@@ -86,28 +74,27 @@ describe("getOrCreateChildSessionCount", () => {
 
     expect(second).toBe(first)
     await flush()
-    expect(getChildrenCallCount()).toBe(1)
-    expect(first()).toBe(1)
+    expect(first()).toBe(0)
   })
 
   test("different sessions get independent state", async () => {
     const sessionA = uniqueSessionID()
     const sessionB = uniqueSessionID()
-    const { api: apiA } = createMockApi([{ id: "ses_child_a", parentID: sessionA }])
-    const { api: apiB } = createMockApi([])
+    const { api: apiA } = createMockApi()
+    const { api: apiB } = createMockApi()
     const { onDispose } = createDisposeCollector()
 
     const countA = getOrCreateChildSessionCount(apiA, sessionA, onDispose)
     const countB = getOrCreateChildSessionCount(apiB, sessionB, onDispose)
 
     await flush()
-    expect(countA()).toBe(1)
+    expect(countA()).toBe(0)
     expect(countB()).toBe(0)
   })
 
   test("disposing unsubscribes all event handlers (no leaks)", () => {
     const sessionID = uniqueSessionID()
-    const { api, subscriberCount } = createMockApi([])
+    const { api, subscriberCount } = createMockApi()
     const { onDispose, disposeAll } = createDisposeCollector()
 
     getOrCreateChildSessionCount(api, sessionID, onDispose)
@@ -125,7 +112,7 @@ describe("getOrCreateChildSessionCount", () => {
   test("a reactive subscriber (createEffect) actually reruns as the count changes", async () => {
     const sessionID = uniqueSessionID()
     const seen: number[] = []
-    const { api, emit } = createMockApi([])
+    const { api, emit } = createMockApi()
     const { onDispose } = createDisposeCollector()
     let dispose!: () => void
 

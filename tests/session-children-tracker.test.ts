@@ -1,24 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { trackChildSessions } from "../src/session-children-tracker"
-import type { ChildSession, ChildSessionEvent, ChildSessionEventType } from "../src/session-children"
+import type { ChildSessionEvent, ChildSessionEventType } from "../src/session-children"
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui"
 
 const PARENT = "ses_parent"
 
-/** A fake `api.client.session.children` + `api.event.on` good enough to drive this in isolation. */
-function createMockApi(initialChildren: readonly ChildSession[] = []) {
+/** A fake `api.event.on` good enough to drive this in isolation. */
+function createMockApi() {
   const handlers = new Map<ChildSessionEventType, Set<(event: ChildSessionEvent) => void>>()
-  let childrenCallCount = 0
-
   const api = {
-    client: {
-      session: {
-        async children() {
-          childrenCallCount += 1
-          return { data: initialChildren }
-        },
-      },
-    },
     event: {
       on(type: ChildSessionEventType, handler: (event: ChildSessionEvent) => void) {
         const set = handlers.get(type) ?? new Set()
@@ -41,9 +31,6 @@ function createMockApi(initialChildren: readonly ChildSession[] = []) {
       for (const set of handlers.values()) total += set.size
       return total
     },
-    getChildrenCallCount() {
-      return childrenCallCount
-    },
   }
 }
 
@@ -65,21 +52,8 @@ function createUpdateRecorder(initial: ReadonlySet<string> = new Set()) {
 const flush = () => Promise.resolve().then(() => Promise.resolve())
 
 describe("trackChildSessions", () => {
-  test("seeds from the initial children() snapshot, keeping only matching parentID", async () => {
-    const { api } = createMockApi([
-      { id: "ses_child", parentID: PARENT },
-      { id: "ses_unrelated", parentID: "ses_someone_else" },
-    ])
-    const recorder = createUpdateRecorder()
-
-    trackChildSessions(api, PARENT, recorder.update)
-    await flush()
-
-    expect([...recorder.current]).toEqual(["ses_child"])
-  })
-
   test("a live session.created event for a new child adds it", () => {
-    const { api, emit } = createMockApi([])
+    const { api, emit } = createMockApi()
     const recorder = createUpdateRecorder()
     trackChildSessions(api, PARENT, recorder.update)
 
@@ -89,7 +63,7 @@ describe("trackChildSessions", () => {
   })
 
   test("a live session.deleted event removes a tracked child", () => {
-    const { api, emit } = createMockApi([])
+    const { api, emit } = createMockApi()
     const recorder = createUpdateRecorder()
     trackChildSessions(api, PARENT, recorder.update)
 
@@ -100,7 +74,7 @@ describe("trackChildSessions", () => {
   })
 
   test("events for unrelated sessions are ignored", () => {
-    const { api, emit } = createMockApi([])
+    const { api, emit } = createMockApi()
     const recorder = createUpdateRecorder()
     trackChildSessions(api, PARENT, recorder.update)
 
@@ -112,22 +86,20 @@ describe("trackChildSessions", () => {
     expect([...recorder.current]).toEqual([])
   })
 
-  test("the seed merges with (doesn't overwrite) a live event that arrived first", async () => {
-    // Simulates the seed's children() request still being in flight when a
-    // session.created event for a *different* child arrives and updates
-    // state first. The seed resolving afterward must not wipe that out.
-    const { api, emit } = createMockApi([{ id: "ses_from_seed", parentID: PARENT }])
+  test("a live event updates state even before other work settles", async () => {
+    // Simulates a live event arriving right away.
+    const { api, emit } = createMockApi()
     const recorder = createUpdateRecorder()
 
     trackChildSessions(api, PARENT, recorder.update)
     emit({ type: "session.created", properties: { sessionID: "ses_live", info: { id: "ses_live", parentID: PARENT } } })
     await flush()
 
-    expect([...recorder.current].sort()).toEqual(["ses_from_seed", "ses_live"])
+    expect([...recorder.current]).toEqual(["ses_live"])
   })
 
   test("the returned unsubscribe function stops listening for events", () => {
-    const { api, emit, subscriberCount } = createMockApi([])
+    const { api, emit, subscriberCount } = createMockApi()
     const recorder = createUpdateRecorder()
 
     const unsubscribe = trackChildSessions(api, PARENT, recorder.update)
@@ -138,12 +110,5 @@ describe("trackChildSessions", () => {
 
     emit({ type: "session.created", properties: { sessionID: "ses_a", info: { id: "ses_a", parentID: PARENT } } })
     expect([...recorder.current]).toEqual([])
-  })
-
-  test("only fetches children() once", async () => {
-    const { api, getChildrenCallCount } = createMockApi([{ id: "ses_child", parentID: PARENT }])
-    trackChildSessions(api, PARENT, createUpdateRecorder().update)
-    await flush()
-    expect(getChildrenCallCount()).toBe(1)
   })
 })
