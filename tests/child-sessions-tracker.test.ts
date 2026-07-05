@@ -100,8 +100,8 @@ describe("isChildOf", () => {
 describe("countActiveChildSessions", () => {
   test("counts only active child records", () => {
     const records = new Map([
-      ["ses_a", { id: "ses_a", status: "active" as const }],
-      ["ses_b", { id: "ses_b", status: "idle" as const }],
+      ["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }],
+      ["ses_b", { id: "ses_b", label: "[unknown] Cooking stuff", status: "idle" as const }],
     ])
     expect(countActiveChildSessions(records)).toBe(1)
   })
@@ -111,77 +111,125 @@ describe("updateChildSessionRecords", () => {
   test("session.created for a matching child adds it", () => {
     const before = new Map()
     const after = updateChildSessionRecords(before, PARENT, createdEvent("ses_a", PARENT))
-    expect(after.get("ses_a")).toEqual({ id: "ses_a", status: "active" })
+    expect(after.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "active" })
+  })
+
+  test("session.created prefers agent and title for the label", () => {
+    const before = new Map()
+    const after = updateChildSessionRecords(before, PARENT, {
+      type: "session.created",
+      properties: {
+        sessionID: "ses_a",
+        info: { id: "ses_a", parentID: PARENT, agent: "explore", title: "Inspect plugin purpose" },
+      },
+    })
+    expect(after.get("ses_a")).toEqual({
+      id: "ses_a",
+      label: "[explore] Inspect plugin purpose",
+      status: "active",
+    })
+  })
+
+  test("session.created strips the trailing subagent marker from the title", () => {
+    const before = new Map()
+    const after = updateChildSessionRecords(before, PARENT, {
+      type: "session.created",
+      properties: {
+        sessionID: "ses_a",
+        info: { id: "ses_a", parentID: PARENT, agent: "explore", title: "Inspect videolist tests (@explore subagent)" },
+      },
+    })
+    expect(after.get("ses_a")).toEqual({
+      id: "ses_a",
+      label: "[explore] Inspect videolist tests",
+      status: "active",
+    })
+  })
+
+  test("session.created falls back to unknown and Cooking stuff", () => {
+    const before = new Map()
+    const after = updateChildSessionRecords(before, PARENT, {
+      type: "session.created",
+      properties: {
+        sessionID: "ses_a",
+        info: { id: "ses_a", parentID: PARENT },
+      },
+    })
+    expect(after.get("ses_a")).toEqual({
+      id: "ses_a",
+      label: "[unknown] Cooking stuff",
+      status: "active",
+    })
   })
 
   test("session.created for an unrelated session is a no-op and keeps the same reference", () => {
-    const before = new Map([["ses_existing", { id: "ses_existing", status: "active" as const }]])
+    const before = new Map([["ses_existing", { id: "ses_existing", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, createdEvent("ses_other", "ses_not_our_parent"))
     expect(after).toBe(before)
   })
 
   test("session.updated re-adding an already-tracked child is a no-op and keeps the same reference", () => {
-    const before = new Map([["ses_a", { id: "ses_a", status: "active" as const }]])
+    const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, updatedEvent("ses_a", PARENT))
     expect(after).toBe(before)
   })
 
   test("session.updated whose parentID no longer matches removes it (defensive case)", () => {
-    const before = new Map([["ses_a", { id: "ses_a", status: "active" as const }]])
+    const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, updatedEvent("ses_a", "ses_someone_else"))
     expect(after.has("ses_a")).toBe(false)
   })
 
   test("session.updated for an already tracked idle child does not reactivate it", () => {
-    const before = new Map([["ses_a", { id: "ses_a", status: "idle" as const }]])
+    const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" as const }]])
     const after = updateChildSessionRecords(before, PARENT, updatedEvent("ses_a", PARENT))
-    expect(after.get("ses_a")).toEqual({ id: "ses_a", status: "idle" })
+    expect(after.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
   test("session.deleted removes a tracked child", () => {
     const before = new Map([
-      ["ses_a", { id: "ses_a", status: "active" as const }],
-      ["ses_b", { id: "ses_b", status: "idle" as const }],
+      ["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }],
+      ["ses_b", { id: "ses_b", label: "[unknown] Cooking stuff", status: "idle" as const }],
     ])
     const after = updateChildSessionRecords(before, PARENT, deletedEvent("ses_a", PARENT))
     expect(after.has("ses_a")).toBe(false)
-    expect(after.get("ses_b")).toEqual({ id: "ses_b", status: "idle" })
+    expect(after.get("ses_b")).toEqual({ id: "ses_b", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
   test("session.deleted for an id we don't track is a no-op and keeps the same reference", () => {
-    const before = new Map([["ses_b", { id: "ses_b", status: "active" as const }]])
+    const before = new Map([["ses_b", { id: "ses_b", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, deletedEvent("ses_a", PARENT))
     expect(after).toBe(before)
   })
 
   test("session.idle removes a tracked child", () => {
-    const before = new Map([["ses_a", { id: "ses_a", status: "active" as const }]])
+    const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, idleEvent("ses_a"))
-    expect(after.get("ses_a")).toEqual({ id: "ses_a", status: "idle" })
+    expect(after.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
   test("session.status with idle removes a tracked child", () => {
-    const before = new Map([["ses_a", { id: "ses_a", status: "active" as const }]])
+    const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, statusEvent("ses_a", "idle"))
-    expect(after.get("ses_a")).toEqual({ id: "ses_a", status: "idle" })
+    expect(after.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
   test("session.status busy leaves a tracked child in place", () => {
-    const before = new Map([["ses_a", { id: "ses_a", status: "active" as const }]])
+    const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, statusEvent("ses_a", "busy"))
     expect(after).toBe(before)
   })
 
   test("session.next.step.ended marks a tracked child idle", () => {
-    const before = new Map([["ses_a", { id: "ses_a", status: "active" as const }]])
+    const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, stepEndedEvent("ses_a"))
-    expect(after.get("ses_a")).toEqual({ id: "ses_a", status: "idle" })
+    expect(after.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
   test("session.next.step.failed marks a tracked child idle", () => {
-    const before = new Map([["ses_a", { id: "ses_a", status: "active" as const }]])
+    const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, stepFailedEvent("ses_a"))
-    expect(after.get("ses_a")).toEqual({ id: "ses_a", status: "idle" })
+    expect(after.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
 })
@@ -194,7 +242,7 @@ describe("trackChildSessions", () => {
 
     emit({ type: "session.created", properties: { sessionID: "ses_a", info: { id: "ses_a", parentID: PARENT } } })
 
-    expect(recorder.current.get("ses_a")).toEqual({ id: "ses_a", status: "active" })
+    expect(recorder.current.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "active" })
   })
 
   test("a live session.deleted event removes a tracked child", () => {
@@ -216,7 +264,7 @@ describe("trackChildSessions", () => {
     emit({ type: "session.created", properties: { sessionID: "ses_a", info: { id: "ses_a", parentID: PARENT } } })
     emit({ type: "session.idle", properties: { sessionID: "ses_a" } })
 
-    expect(recorder.current.get("ses_a")).toEqual({ id: "ses_a", status: "idle" })
+    expect(recorder.current.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
   test("a live session.status idle event removes a tracked child", () => {
@@ -227,7 +275,7 @@ describe("trackChildSessions", () => {
     emit({ type: "session.created", properties: { sessionID: "ses_a", info: { id: "ses_a", parentID: PARENT } } })
     emit({ type: "session.status", properties: { sessionID: "ses_a", status: { type: "idle" } } })
 
-    expect(recorder.current.get("ses_a")).toEqual({ id: "ses_a", status: "idle" })
+    expect(recorder.current.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
   test("a live session.next.step.ended event marks a tracked child idle", () => {
@@ -238,7 +286,7 @@ describe("trackChildSessions", () => {
     emit({ type: "session.created", properties: { sessionID: "ses_a", info: { id: "ses_a", parentID: PARENT } } })
     emit({ type: "session.next.step.ended", properties: { sessionID: "ses_a" } })
 
-    expect(recorder.current.get("ses_a")).toEqual({ id: "ses_a", status: "idle" })
+    expect(recorder.current.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
   test("a live session.updated event does not reactivate an idle tracked child", () => {
@@ -250,7 +298,7 @@ describe("trackChildSessions", () => {
     emit({ type: "session.idle", properties: { sessionID: "ses_a" } })
     emit({ type: "session.updated", properties: { sessionID: "ses_a", info: { id: "ses_a", parentID: PARENT } } })
 
-    expect(recorder.current.get("ses_a")).toEqual({ id: "ses_a", status: "idle" })
+    expect(recorder.current.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
   test("events for unrelated sessions are ignored", () => {
@@ -275,7 +323,7 @@ describe("trackChildSessions", () => {
     emit({ type: "session.created", properties: { sessionID: "ses_live", info: { id: "ses_live", parentID: PARENT } } })
     await flush()
 
-    expect(recorder.current.get("ses_live")).toEqual({ id: "ses_live", status: "active" })
+    expect(recorder.current.get("ses_live")).toEqual({ id: "ses_live", label: "[unknown] Cooking stuff", status: "active" })
   })
 
   test("the returned unsubscribe function stops listening for events", () => {

@@ -1,6 +1,8 @@
 export type ChildSession = {
   id: string
   parentID?: string
+  title?: string
+  agent?: string
 }
 
 export const CHILD_SESSION_EVENT_TYPES = [
@@ -64,6 +66,7 @@ export type ChildSessionRecordStatus = "active" | "idle"
 
 export type ChildSessionRecord = {
   id: string
+  label: string
   status: ChildSessionRecordStatus
 }
 

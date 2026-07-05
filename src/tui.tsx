@@ -45,7 +45,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <For each={childSessionRows()}>
           {(child) => (
             <text fg={theme().textMuted}>
-              - {child.id} ({child.status})
+              - {child.label} ({child.status})
             </text>
           )}
         </For>

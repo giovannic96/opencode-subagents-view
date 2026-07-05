@@ -17,6 +17,12 @@ function toRecordStatus(sessionStatus: ChildSessionStatus["type"]): ChildSession
   return sessionStatus === "idle" ? "idle" : "active"
 }
 
+function getChildSessionLabel(session: ChildSession): string {
+  const agent = session.agent ?? "unknown"
+  const title = (session.title ?? "Cooking stuff").replace(/\s*\(@[^)]* subagent\)$/u, "")
+  return `[${agent}] ${title}`
+}
+
 function addOrIgnoreChild(
   records: ChildSessionRecords,
   parentSessionID: string,
@@ -25,7 +31,7 @@ function addOrIgnoreChild(
   if (!isChildOf(session, parentSessionID) || records.has(session.id)) return records
 
   const next = new Map(records)
-  next.set(session.id, { id: session.id, status: "active" })
+  next.set(session.id, { id: session.id, label: getChildSessionLabel(session), status: "active" })
   return next
 }
 
@@ -46,7 +52,7 @@ function setChildStatus(
   if (!record || record.status === status) return records
 
   const next = new Map(records)
-  next.set(sessionID, { id: sessionID, status })
+  next.set(sessionID, { id: record.id, label: record.label, status })
   return next
 }
 
