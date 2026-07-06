@@ -80,8 +80,6 @@ function getPartActivity(part: Part): string | undefined {
   switch (part.type) {
     case "subtask":
       return withPrefix("subtask:", part.description.trim() || part.prompt.trim() || part.agent)
-    case "reasoning":
-      return part.text.trim() ? `reasoning: ${snippet(part.text)}` : undefined
     case "tool":
       switch (part.state.status) {
         case "running":

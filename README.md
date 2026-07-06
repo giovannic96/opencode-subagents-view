@@ -102,7 +102,7 @@ The full flow is:
     - `session.next.tool.input.started`: the child started preparing a tool call. The row only changes if the tool input already contains a target we can show.
     - `session.next.tool.called`: the tool was called. The row activity becomes a concrete summary like `searching src/**/*.ts`, `editing README.md`, or `running shell: bun test` when the input provides a target. If OpenCode does not give us a target, the existing activity stays in place.
     - `session.next.retried`: the session retried. The row activity becomes `retrying N`.
-    - `message.part.updated`: a finalized part arrived or changed. The row activity is derived from the part type, for example `reasoning: ...` for reasoning text, a raw text snippet for `text`, `glob: src/**/*.ts` for completed tool output, or `subtask: ...` for delegated work.
+    - `message.part.updated`: a finalized part arrived or changed. The row activity is derived from the part type, for example a raw text snippet for `text`, `glob: src/**/*.ts` for completed tool output, or `subtask: ...` for delegated work.
     - `session.deleted`: the child session was deleted. If its id is tracked, it is removed from the map.
     - Those event names are defined once in `src/child-sessions-types.ts` and the type is derived from that list, so the code does not repeat the union in multiple places.
 6. Whenever one of those cases changes the set, `setChildIds(...)` replaces the signal with a new set.
@@ -122,7 +122,7 @@ Suppose the current session is `A`.
 - `updateChildSessionMembership(...)` sees that `B` belongs to `A`, so it adds `B` to the set.
 - The count changes from `0` to `1`, and the sidebar shows `Subagents (1 active)`.
 - If `B` later becomes idle, the `session.idle` or `session.status` event keeps it in the record map but marks it `idle`, and the section stays visible.
-- If `B` starts reasoning or text, the second line stays as-is unless OpenCode later gives concrete text to show.
+- If `B` starts text, the second line stays as-is unless OpenCode later gives concrete text to show.
 - If `B` calls a tool, the second line shows a concrete summary like `searching src/**/*.ts` or `running shell: bun test` when the tool input has a target, and it stays unchanged when the tool has no target or fails.
 - If `B` emits a finalized part, `message.part.updated` refreshes the second line with that concrete summary only when there is real text to show.
 - If `B` finishes a step, the `session.next.step.ended` or `session.next.step.failed` event marks it `idle` or `error`, and the section stays visible.

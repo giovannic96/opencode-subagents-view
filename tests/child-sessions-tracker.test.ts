@@ -375,32 +375,6 @@ describe("updateChildSessionRecords", () => {
     })
   })
 
-  test("message.part.updated prefers concrete reasoning text when available", () => {
-    const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }]])
-    const after = updateChildSessionRecords(before, PARENT, {
-      type: "message.part.updated",
-      properties: {
-        sessionID: "ses_a",
-        time: 1,
-        part: {
-          id: "part_a",
-          sessionID: "ses_a",
-          messageID: "msg_a",
-          type: "reasoning",
-          text: "checking whether the tracker already has this child",
-          time: { start: 1 },
-        },
-      },
-    })
-
-    expect(after.get("ses_a")).toEqual({
-      id: "ses_a",
-      label: "[unknown] Cooking stuff",
-      status: "active",
-      activity: "reasoning: checking whether the tracker already has this child",
-    })
-  })
-
   test("message.part.updated uses text directly", () => {
     const before = new Map([["ses_a", { id: "ses_a", label: "[unknown] Cooking stuff", status: "active" as const }]])
     const after = updateChildSessionRecords(before, PARENT, {
