@@ -71,7 +71,7 @@ This is a plain TUI plugin, not a fork or patch of opencode itself. It hooks int
 
 ### Why all the solid-js code lives in one file
 
-Earlier in this project, `createSignal`/`createEffect` usage was split across two files (a store file and a component file). Confirmed by direct reference-equality checks at the time: despite resolving to the same file path, the two files ended up with genuinely different `solid-js` module instances, so a signal update made in one file silently never notified a subscriber registered in the other. The fix was consolidating all solid-js usage into this single file. Everything that doesn't call `createSignal`/`createEffect` directly (the two files above) can safely live elsewhere, plain TypeScript modules don't have this problem, only solid-js's own reactive primitives do.
+Earlier in the project, `createSignal`/`createEffect` was split across files and ended up with different `solid-js` instances, so updates stopped propagating. The fix was to keep all Solid usage in `src/tui.tsx`. Plain TypeScript modules can stay separate.
 
 ### Development
 
@@ -80,9 +80,7 @@ Earlier in this project, `createSignal`/`createEffect` usage was split across tw
 
 ### A real bug this project hit, and how it's guarded against now
 
-An early version of the "Subagents (N)" line looked correct in isolated testing (right data, no crash) but froze a real session as soon as it actually had a subagent to show. Root cause, confirmed by reproducing it deliberately: the host legitimately calls a slot's render function more than once for the same session under normal operation (observed: twice, several seconds apart). That's fine on its own, but the plugin's code created a brand new signal and kicked off a brand new `client.session.children()` request on *every single one* of those calls. Each call's freshly-empty state transitioning to "has 1 child" apparently triggered another such call, compounding into an uncontrolled feedback loop, one reproduction hit over 20,000 renders in about 26 seconds and crashed the renderer outright.
-
-The fix (see `getOrCreateChildSessionCount` in `src/tui.tsx`) caches state per session id for the plugin's lifetime instead of per render, so only the first call for a given session ever does real work; later calls just read the already-settled state, which can't restart the cycle. `tests/tui.test.ts` has a test that specifically pins this down, and the fix was also re-verified against the original real reproduction (a live `task`-tool delegation, not just a synthetic test) before being considered fixed.
+An early version of the section re-created state on every render and could trigger a feedback loop. The fix caches state per session id for the plugin lifetime, so later renders reuse the settled state instead of starting over. `tests/tui.test.ts` pins that down.
 
 The current implementation keeps a record for each child session. Active children count toward the sidebar number, idle children stay visible, and deleted children are removed entirely. The section itself stays visible once the first child has appeared, until the session is disposed.
 
