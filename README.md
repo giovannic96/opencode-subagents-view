@@ -107,7 +107,7 @@ The full flow is:
     - Those event names are defined once in `src/child-sessions-types.ts` and the type is derived from that list, so the code does not repeat the union in multiple places.
 6. Whenever one of those cases changes the set, `setChildIds(...)` replaces the signal with a new set.
 7. Solid notices that `childIds()` changed, so `childSessionCount()` is re-evaluated.
-8. The sidebar now shows the updated `Subagents (N active)` value, plus a per-row status icon, the original `[agent] title`, and a second indented line for the current activity when available.
+8. The sidebar now shows the updated `Subagents (N active)` value, plus a per-row status icon, the original `[agent] title`, and a second indented line for the current activity when available. If all tracked children are idle, the section stays visible as `Subagents (0 active)` until a new child arrives, at which point old idle rows are cleared and the new run starts fresh.
 9. If the same session is rendered again, the cached getter is reused instead of creating a new signal or a new listener.
 10. When the plugin/view is being shut down, for example when you quit opencode, close the terminal, or disable/reload the plugin, the `onDispose(...)` callback runs. It calls `unsubscribe()` so the live event listeners stop and the cached entry for that session is removed.
 11. That cleanup matters because otherwise the plugin would keep listening to old session events even after the view is gone.
@@ -122,6 +122,8 @@ Suppose the current session is `A`.
 - `updateChildSessionMembership(...)` sees that `B` belongs to `A`, so it adds `B` to the set.
 - The count changes from `0` to `1`, and the sidebar shows `Subagents (1 active)`.
 - If `B` later becomes idle, the `session.idle` or `session.status` event keeps it in the record map but marks it `idle`, and the section stays visible.
+- If every tracked child is idle, the section stays visible as `Subagents (0 active)`.
+- When a new child appears after that idle-only state, the old idle rows are cleared so the section shows only the new run.
 - If `B` starts text, the second line stays as-is unless OpenCode later gives concrete text to show.
 - If `B` calls a tool, the second line shows a concrete summary like `searching src/**/*.ts` or `running shell: bun test` when the tool input has a target, and it stays unchanged when the tool has no target or fails.
 - If `B` emits a finalized part, `message.part.updated` refreshes the second line with that concrete summary only when there is real text to show.

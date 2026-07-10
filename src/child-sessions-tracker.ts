@@ -20,6 +20,23 @@ function toRecordStatus(sessionStatus: ChildSessionStatus["type"]): ChildSession
   return "active"
 }
 
+function hasChildStatus(records: ChildSessionRecords, status: ChildSessionRecordStatus): boolean {
+  for (const record of records.values()) {
+    if (record.status === status) return true
+  }
+  return false
+}
+
+function dropIdleChildren(records: ChildSessionRecords): ChildSessionRecords {
+  if (!hasChildStatus(records, "idle")) return records
+
+  const next = new Map(records)
+  for (const [sessionID, record] of records) {
+    if (record.status === "idle") next.delete(sessionID)
+  }
+  return next
+}
+
 function addOrIgnoreChild(
   records: ChildSessionRecords,
   parentSessionID: string,
@@ -27,7 +44,8 @@ function addOrIgnoreChild(
 ): ChildSessionRecords {
   if (!isChildOf(session, parentSessionID) || records.has(session.id)) return records
 
-  const next = new Map(records)
+  const baseRecords = hasChildStatus(records, "active") ? records : dropIdleChildren(records)
+  const next = new Map(baseRecords)
   next.set(session.id, { id: session.id, label: formatChildSessionLabel(session), status: "active" })
   return next
 }

@@ -407,6 +407,32 @@ describe("updateChildSessionRecords", () => {
     expect(after.get("ses_a")).toEqual({ id: "ses_a", label: "[unknown] Cooking stuff", status: "idle" })
   })
 
+  test("session.created clears old idle children when a new run starts", () => {
+    const before = new Map([
+      ["ses_old_a", { id: "ses_old_a", label: "[unknown] Cooking stuff", status: "idle" as const }],
+      ["ses_old_b", { id: "ses_old_b", label: "[unknown] Cooking stuff", status: "idle" as const }],
+    ])
+
+    const after = updateChildSessionRecords(before, PARENT, createdEvent("ses_new", PARENT))
+
+    expect(after.has("ses_old_a")).toBe(false)
+    expect(after.has("ses_old_b")).toBe(false)
+    expect(after.get("ses_new")).toEqual({ id: "ses_new", label: "[unknown] Cooking stuff", status: "active" })
+  })
+
+  test("session.created keeps existing active children and idle ones when a run is already active", () => {
+    const before = new Map([
+      ["ses_active", { id: "ses_active", label: "[unknown] Cooking stuff", status: "active" as const }],
+      ["ses_idle", { id: "ses_idle", label: "[unknown] Cooking stuff", status: "idle" as const }],
+    ])
+
+    const after = updateChildSessionRecords(before, PARENT, createdEvent("ses_new", PARENT))
+
+    expect(after.get("ses_active")).toEqual({ id: "ses_active", label: "[unknown] Cooking stuff", status: "active" })
+    expect(after.get("ses_idle")).toEqual({ id: "ses_idle", label: "[unknown] Cooking stuff", status: "idle" })
+    expect(after.get("ses_new")).toEqual({ id: "ses_new", label: "[unknown] Cooking stuff", status: "active" })
+  })
+
 })
 
 describe("trackChildSessions", () => {
