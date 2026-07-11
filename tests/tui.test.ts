@@ -1,4 +1,4 @@
-import { createEffect, createRoot } from "solid-js"
+import { createEffect, createRoot } from "solid-js/dist/solid.js"
 import { describe, expect, test } from "bun:test"
 import { getOrCreateChildSessions } from "../src/tui"
 import { countActiveChildSessions } from "../src/child-sessions-tracker"

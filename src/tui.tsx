@@ -1,126 +1,71 @@
-import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { For, createSignal, Show } from "solid-js"
-import { countActiveChildSessions, trackChildSessions } from "./child-sessions-tracker"
-import {
-  DEFAULT_CHILD_SESSION_ACTIVITY_MAX_LENGTH,
-  DEFAULT_CHILD_SESSION_LABEL_MAX_LENGTH,
-  getChildStatusMeta,
-  truncateChildSessionLabel,
-} from "./labels-ui"
-import type { ChildSessionRecords } from "./child-sessions-types"
+// This is the package's real "./tui" entrypoint. It intentionally does not
+// statically import solid-js or @opentui/solid itself (see below), and
+// contains no plugin logic of its own. The actual implementation lives in
+// src/tui-runtime.tsx.
+//
+// Why this file exists: solid-js publishes a conditional `exports` map with
+// a "node" condition that points at its non-reactive SSR build. Bun matches
+// that condition by default, so a bare `import ... from "solid-js"` resolves
+// to a build whose createEffect is a literal no-op. See README ("Why this
+// plugin patches solid-js's exports at runtime") for the full story,
+// including why this can't be a `postinstall` script: opencode's own
+// "Install Plugin" flow installs this package without running lifecycle
+// scripts, so a postinstall-based fix silently never runs for anyone who
+// installs this plugin that way, which is the normal way a first-time npm
+// user installs it.
+//
+// The fix instead lives directly in this module's own load path: patch
+// solid-js's package.json synchronously, then dynamically import the real
+// implementation (whose static `import ... from "solid-js"` only gets
+// evaluated *after* this file's own top-level code has already run). This
+// guarantees the patch runs every time this plugin loads, regardless of how
+// or where it was installed, with no separate install-time step at all.
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { createRequire } from "node:module"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
-const id = "subagents-view"
+function findSolidJsPackageJson(): string | undefined {
+  const require = createRequire(import.meta.url)
+  const here = dirname(fileURLToPath(import.meta.url))
 
-// Cached per session id instead of created fresh per render: repeated render
-// calls must reuse existing state, not restart it. See README ("A real bug
-// this project hit") for why.
-const childSessionRecords = new Map<string, () => ChildSessionRecords>()
-const childSessionCollapsed = new Map<string, { collapsed: () => boolean; setCollapsed: (next: boolean | ((current: boolean) => boolean)) => void }>()
-
-export function getOrCreateChildSessions(
-  api: TuiPluginApi,
-  parentSessionID: string,
-  onDispose: (fn: () => void) => void,
-): () => ChildSessionRecords {
-  const cached = childSessionRecords.get(parentSessionID)
-  if (cached) return cached
-
-  const [childSessions, setChildSessions] = createSignal<ChildSessionRecords>(new Map())
-  const unsubscribe = trackChildSessions(api, parentSessionID, setChildSessions)
-
-  onDispose(() => {
-    unsubscribe()
-    childSessionRecords.delete(parentSessionID)
-  })
-
-  childSessionRecords.set(parentSessionID, childSessions)
-  return childSessions
-}
-
-export function getOrCreateChildSessionsCollapsed(
-  parentSessionID: string,
-  onDispose: (fn: () => void) => void,
-): [() => boolean, (next: boolean | ((current: boolean) => boolean)) => void] {
-  const cached = childSessionCollapsed.get(parentSessionID)
-  if (cached) {
-    return [cached.collapsed, cached.setCollapsed]
+  let resolved: string
+  try {
+    resolved = require.resolve("solid-js", { paths: [here] })
+  } catch {
+    return undefined
   }
 
-  const [collapsed, setCollapsed] = createSignal(false)
+  let dir = dirname(resolved)
+  while (true) {
+    const candidate = join(dir, "package.json")
+    if (existsSync(candidate)) {
+      const pkg = JSON.parse(readFileSync(candidate, "utf8"))
+      if (pkg.name === "solid-js") return candidate
+    }
 
-  onDispose(() => {
-    childSessionCollapsed.delete(parentSessionID)
-  })
-
-  childSessionCollapsed.set(parentSessionID, { collapsed, setCollapsed })
-  return [collapsed, setCollapsed]
+    const parent = dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
 }
 
-function View(props: { api: TuiPluginApi; session_id: string }) {
-  const theme = () => props.api.theme.current
-  const childSessions = getOrCreateChildSessions(props.api, props.session_id, props.api.lifecycle.onDispose)
-  const [childSessionsCollapsed, setChildSessionsCollapsed] = getOrCreateChildSessionsCollapsed(
-    props.session_id,
-    props.api.lifecycle.onDispose,
-  )
-  const childSessionCount = () => countActiveChildSessions(childSessions())
-  const childSessionRows = () => Array.from(childSessions().values()).sort((a, b) => a.id.localeCompare(b.id))
-  const childSessionHeader = () => (childSessionsCollapsed() ? "▶" : "▼")
+function patchSolidJsExports(): void {
+  const pkgPath = findSolidJsPackageJson()
+  if (!pkgPath) return
 
-  return (
-    <Show when={childSessionRows().length > 0}>
-      <box
-        onMouseDown={() => setChildSessionsCollapsed((current) => !current)}
-      >
-        <text fg={theme().text}>
-          <b>{childSessionHeader()} Subagents</b> ({childSessionCount()} active)
-        </text>
-        <Show when={!childSessionsCollapsed()}>
-          <For each={childSessionRows()}>
-            {(child) => {
-              const statusMeta = getChildStatusMeta(child.status)
-              const currentTheme = theme()
-              const fg =
-                statusMeta.tone === "success"
-                  ? currentTheme.success
-                  : statusMeta.tone === "warning"
-                    ? currentTheme.warning
-                    : statusMeta.tone === "error"
-                      ? currentTheme.error
-                      : currentTheme.textMuted
-              const title = truncateChildSessionLabel(child.label, DEFAULT_CHILD_SESSION_LABEL_MAX_LENGTH)
-              const activity = child.activity ? truncateChildSessionLabel(child.activity, DEFAULT_CHILD_SESSION_ACTIVITY_MAX_LENGTH) : undefined
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8"))
+  const mainExport = pkg.exports?.["."]
+  if (!mainExport || typeof mainExport !== "object" || !("node" in mainExport)) return
 
-              return (
-                <box>
-                  <text fg={fg}>{statusMeta.icon} {title}</text>
-                  <Show when={activity}>
-                    <text fg={currentTheme.textMuted}>  ↳ {activity}</text>
-                  </Show>
-                </box>
-              )
-            }}
-          </For>
-        </Show>
-      </box>
-    </Show>
-  )
+  delete mainExport.node
+  writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
 }
 
-const tui: TuiPlugin = async (api) => {
-  api.slots.register({
-    order: 350, // after built-in LSP (300), before Todo (400)
-    slots: {
-      sidebar_content(_ctx, props) {
-        return <View api={api} session_id={props.session_id} />
-      },
-    },
-  })
-}
+patchSolidJsExports()
 
-const plugin: TuiPluginModule = {
-  id,
-  tui,
-}
+const runtime = await import("./tui-runtime")
 
-export default plugin
+export const getOrCreateChildSessions = runtime.getOrCreateChildSessions
+export const getOrCreateChildSessionsCollapsed = runtime.getOrCreateChildSessionsCollapsed
+export default runtime.default

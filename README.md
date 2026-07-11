@@ -35,8 +35,6 @@ A terminal UI plugin for OpenCode that adds a live "Subagents" panel to the sess
    npm install
    ```
 
-   This also runs the same `postinstall` script described above.
-
 3. Register it in `tui.json`/`tui.jsonc` using the absolute path to this folder instead of the package name:
 
    ```json
@@ -70,15 +68,16 @@ This is a plain TUI plugin, not a fork or patch of opencode itself. It hooks int
 - `src/child-sessions-tracker.ts`: session membership logic plus the live session subscription. Plain data in, data out.
 - `src/child-sessions-types.ts`: shared child-session and event types. `CHILD_SESSION_EVENT_TYPES` is defined once here and the event type union is derived from it, so the rest of the code never repeats it.
 - `src/labels-ui.ts`: all label and activity formatting helpers (`formatChildSessionLabel`, `getChildSessionDisplayLabel`, `truncateChildSessionLabel`, `getChildStatusMeta`, and the tool/activity label builders). Plain data in, data out, no solid-js.
-- `src/tui.tsx`: the only file that touches solid-js (`createSignal`) and JSX, kept as thin as possible on purpose (see "Why all the solid-js code lives in one file" below). Registers the section at `order: 350` in the shared `sidebar_content` slot (built-ins: Context=100, MCP=200, LSP=300, Todo=400, Files=500), placing it right after LSP, before Todo. Also owns the collapse/expand signal for the section header.
+- `src/tui.tsx`: the package's real `./tui` entrypoint. Contains no plugin logic of its own, only a synchronous fix for solid-js's exports (see [Why this plugin patches solid-js's exports at runtime](#why-this-plugin-patches-solid-jss-exports-at-runtime)), then dynamically imports `src/tui-runtime.tsx` for the actual implementation.
+- `src/tui-runtime.tsx`: the actual plugin implementation, and the only file that touches solid-js (`createSignal`) and JSX, kept as thin as possible on purpose (see "Why all the solid-js code lives in one file" below). Registers the section at `order: 350` in the shared `sidebar_content` slot (built-ins: Context=100, MCP=200, LSP=300, Todo=400, Files=500), placing it right after LSP, before Todo. Also owns the collapse/expand signal for the section header.
 
 ### Why all the solid-js code lives in one file
 
-Earlier in the project, `createSignal`/`createEffect` was split across files and ended up with different `solid-js` instances, so updates stopped propagating. The fix was to keep all Solid usage in `src/tui.tsx`. Plain TypeScript modules can stay separate.
+Earlier in the project, `createSignal`/`createEffect` was split across files and ended up with different `solid-js` instances, so updates stopped propagating. The fix was to keep all Solid usage in `src/tui-runtime.tsx`. Plain TypeScript modules can stay separate.
 
 ### Development
 
-- `npm test` (or `bun test`) runs the test suite. Session-tracking rules and the plugin's reactive wiring are tested together in `tests/child-sessions-tracker.test.ts` using plain mocks and solid-js's `createRoot`, without needing a real opencode instance.
+- `npm test` (or `bun test --conditions=browser`) runs the test suite. Session-tracking rules and the plugin's reactive wiring are tested together in `tests/child-sessions-tracker.test.ts` using plain mocks and solid-js's `createRoot`, without needing a real opencode instance. The `--conditions=browser` flag exists because `bun test` eagerly discovers this project's entire module graph upfront, including files reached only through a dynamic `import()`, which defeats the runtime patch described below for the test suite specifically. This does not affect real usage: opencode discovers this plugin only through a runtime string path read from `tui.json`, which it can't pre-scan the same way, verified directly against a real opencode instance starting from a genuinely unpatched `solid-js`.
 - `npm run typecheck` runs `tsc --noEmit`.
 
 ### A real bug this project hit, and how it's guarded against now
@@ -135,7 +134,7 @@ Suppose the current session is `A`.
 - If `B` is deleted, the `session.deleted` event removes it from the map.
 - The count goes back to `0`, but the sidebar stays visible until the session itself is disposed.
 
-### Why this plugin patches solid-js's exports
+### Why this plugin patches solid-js's exports at runtime
 
 `solid-js` publishes a conditional `exports` map with a `"node"` condition that points at its server-side rendering build, a one-shot, non-reactive implementation meant for frameworks that render HTML once on a Node.js backend. Bun explicitly supports and matches that `"node"` condition for compatibility with the wider Node ecosystem.
 
@@ -143,9 +142,13 @@ That's the right choice for a typical Node.js backend, but wrong here: this plug
 
 The symptom, if this isn't patched, is subtle and confusing: `createSignal`, `createEffect`, and `createMemo` all still exist and don't throw, but nothing created with them ever updates after the initial render, because the resolved `solid-js` build's `createEffect` is a literal no-op and its signals don't notify subscribers.
 
-`scripts/fix-solid-js-exports.mjs` removes that `"node"` condition from `solid-js`'s own `package.json`, and runs automatically as this plugin's `postinstall` script. It intentionally does not use [`patch-package`](https://github.com/ds300/patch-package), even though that's the more common tool for this kind of situation: `patch-package` locates the project root by walking up from `process.cwd()` until it escapes any `node_modules` folder, on the assumption that it is always running at the root of the project being installed. That assumption breaks when this plugin is installed as a nested dependency of someone else's project (exactly what happens with a plain `npm install opencode-subagents-view`): `patch-package`'s root detection walks past this plugin's own folder and lands on the consumer's project root instead, where the patch file doesn't exist, so it silently applies nothing. `scripts/fix-solid-js-exports.mjs` instead resolves `solid-js` starting from its own script location (`require.resolve("solid-js", { paths: [here] })`), which always finds the correct copy regardless of how deeply this plugin ends up nested, verified by installing this plugin as a real nested npm dependency in a separate throwaway project and confirming both the patch and the resulting reactivity work.
+This plugin does **not** bundle `solid-js` or `@opentui/solid` into a single prebuilt file. An earlier version tried that, and while it initially seemed to break the sidebar entirely, a corrected version of that same bundling approach (using `bun build --target=bun --conditions=browser`, so `@opentui/solid`'s actual Bun-specific build gets selected and inlined rather than a generic fallback) was verified live against a real opencode instance and *did* register and render correctly. Bundling was still set aside in favor of the fix described below, since it adds a build step and removes the ability to inspect the shipped source directly, not because it was shown to be broken.
 
-This plugin also intentionally does **not** bundle `solid-js` or `@opentui/solid` into a single prebuilt file as an alternative fix. An earlier version of this plugin tried that, and it broke the sidebar entirely: `@opentui/solid`'s renderer relies on `useContext(RendererContext)` to reach the terminal renderer that opencode's host process provides, and a bundled copy of `@opentui/solid` carries its own private `createContext`/`useContext` instance, one that is a different object identity than whatever context the host actually populates. The result was a silent "No renderer found" failure with nothing rendered, and no visible error. Keeping `solid-js` and `@opentui/solid` as regular, unbundled dependencies means this plugin's JSX resolves through the exact same module instances the host and other plugins already share, so `useContext` correctly sees the host's renderer.
+This plugin also does **not** use a `postinstall` script, even though that's the more common way to patch a dependency (for example with [`patch-package`](https://github.com/ds300/patch-package)). Both approaches were tried and both failed for the same underlying reason: opencode's own **"Install Plugin"** command, the way a first-time user actually installs this plugin from npm without cloning any source, installs the package **without running lifecycle scripts**. A `postinstall` step verified working when installing from source (a real `npm install` invocation) silently never runs when opencode installs the plugin itself, leaving `solid-js` unpatched and the sidebar broken for exactly the users this package is published for.
+
+The fix instead lives in the plugin's own module graph. `src/tui.tsx`, the package's real `./tui` entrypoint, contains no plugin logic of its own. It synchronously locates and patches `solid-js`'s `package.json` (removing the `"node"` condition, resolving the correct copy via `require.resolve("solid-js", { paths: [here] })` relative to its own file location, which always finds the right copy regardless of how this plugin was installed or how deeply it ends up nested), and only *then* dynamically imports `src/tui-runtime.tsx`, which contains the actual implementation and is the file that statically imports `solid-js` and `@opentui/solid`. Because dynamic `import()` calls in a real runtime module graph (unlike `bun test`'s own eager whole-project scanning) only get resolved at the point they're actually reached, `tui-runtime.tsx`'s own `solid-js` import, and `@opentui/solid`'s internal one, both resolve *after* the patch has already been applied.
+
+This guarantees the patch runs every single time this plugin loads, through any installation path, with no separate install-time step required at all. It was verified end to end starting from a genuinely fresh, unpatched `solid-js` (confirmed via its `package.json` before each run), loaded directly by a real opencode instance, spawning a real subagent, and observing the "Subagents" section render correctly with live activity.
 
 ## License
 

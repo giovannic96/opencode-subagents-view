@@ -1,0 +1,132 @@
+// The actual plugin implementation. Kept separate from src/tui.tsx (the
+// package's real "./tui" entrypoint) so that src/tui.tsx can synchronously
+// patch solid-js's exports *before* this file's static imports of solid-js
+// and @opentui/solid are evaluated. See src/tui.tsx and README ("Why this
+// plugin patches solid-js's exports at runtime") for why.
+
+import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+import { For, createSignal, Show } from "solid-js"
+import { countActiveChildSessions, trackChildSessions } from "./child-sessions-tracker"
+import {
+  DEFAULT_CHILD_SESSION_ACTIVITY_MAX_LENGTH,
+  DEFAULT_CHILD_SESSION_LABEL_MAX_LENGTH,
+  getChildStatusMeta,
+  truncateChildSessionLabel,
+} from "./labels-ui"
+import type { ChildSessionRecords } from "./child-sessions-types"
+
+const id = "subagents-view"
+
+// Cached per session id instead of created fresh per render: repeated render
+// calls must reuse existing state, not restart it. See README ("A real bug
+// this project hit") for why.
+const childSessionRecords = new Map<string, () => ChildSessionRecords>()
+const childSessionCollapsed = new Map<string, { collapsed: () => boolean; setCollapsed: (next: boolean | ((current: boolean) => boolean)) => void }>()
+
+export function getOrCreateChildSessions(
+  api: TuiPluginApi,
+  parentSessionID: string,
+  onDispose: (fn: () => void) => void,
+): () => ChildSessionRecords {
+  const cached = childSessionRecords.get(parentSessionID)
+  if (cached) return cached
+
+  const [childSessions, setChildSessions] = createSignal<ChildSessionRecords>(new Map())
+  const unsubscribe = trackChildSessions(api, parentSessionID, setChildSessions)
+
+  onDispose(() => {
+    unsubscribe()
+    childSessionRecords.delete(parentSessionID)
+  })
+
+  childSessionRecords.set(parentSessionID, childSessions)
+  return childSessions
+}
+
+export function getOrCreateChildSessionsCollapsed(
+  parentSessionID: string,
+  onDispose: (fn: () => void) => void,
+): [() => boolean, (next: boolean | ((current: boolean) => boolean)) => void] {
+  const cached = childSessionCollapsed.get(parentSessionID)
+  if (cached) {
+    return [cached.collapsed, cached.setCollapsed]
+  }
+
+  const [collapsed, setCollapsed] = createSignal(false)
+
+  onDispose(() => {
+    childSessionCollapsed.delete(parentSessionID)
+  })
+
+  childSessionCollapsed.set(parentSessionID, { collapsed, setCollapsed })
+  return [collapsed, setCollapsed]
+}
+
+function View(props: { api: TuiPluginApi; session_id: string }) {
+  const theme = () => props.api.theme.current
+  const childSessions = getOrCreateChildSessions(props.api, props.session_id, props.api.lifecycle.onDispose)
+  const [childSessionsCollapsed, setChildSessionsCollapsed] = getOrCreateChildSessionsCollapsed(
+    props.session_id,
+    props.api.lifecycle.onDispose,
+  )
+  const childSessionCount = () => countActiveChildSessions(childSessions())
+  const childSessionRows = () => Array.from(childSessions().values()).sort((a, b) => a.id.localeCompare(b.id))
+  const childSessionHeader = () => (childSessionsCollapsed() ? "▶" : "▼")
+
+  return (
+    <Show when={childSessionRows().length > 0}>
+      <box
+        onMouseDown={() => setChildSessionsCollapsed((current) => !current)}
+      >
+        <text fg={theme().text}>
+          <b>{childSessionHeader()} Subagents</b> ({childSessionCount()} active)
+        </text>
+        <Show when={!childSessionsCollapsed()}>
+          <For each={childSessionRows()}>
+            {(child) => {
+              const statusMeta = getChildStatusMeta(child.status)
+              const currentTheme = theme()
+              const fg =
+                statusMeta.tone === "success"
+                  ? currentTheme.success
+                  : statusMeta.tone === "warning"
+                    ? currentTheme.warning
+                    : statusMeta.tone === "error"
+                      ? currentTheme.error
+                      : currentTheme.textMuted
+              const title = truncateChildSessionLabel(child.label, DEFAULT_CHILD_SESSION_LABEL_MAX_LENGTH)
+              const activity = child.activity ? truncateChildSessionLabel(child.activity, DEFAULT_CHILD_SESSION_ACTIVITY_MAX_LENGTH) : undefined
+
+              return (
+                <box>
+                  <text fg={fg}>{statusMeta.icon} {title}</text>
+                  <Show when={activity}>
+                    <text fg={currentTheme.textMuted}>  ↳ {activity}</text>
+                  </Show>
+                </box>
+              )
+            }}
+          </For>
+        </Show>
+      </box>
+    </Show>
+  )
+}
+
+const tui: TuiPlugin = async (api) => {
+  api.slots.register({
+    order: 350, // after built-in LSP (300), before Todo (400)
+    slots: {
+      sidebar_content(_ctx, props) {
+        return <View api={api} session_id={props.session_id} />
+      },
+    },
+  })
+}
+
+const plugin: TuiPluginModule = {
+  id,
+  tui,
+}
+
+export default plugin
