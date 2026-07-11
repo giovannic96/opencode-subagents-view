@@ -5,7 +5,11 @@ A terminal UI plugin for OpenCode that adds a live "Subagents" panel to the sess
 
 ### From npm
 
-1. Register it in a **`tui.json`** (or `tui.jsonc`) file, not `opencode.json`, using the package name. This plugin only exports a `tui` entrypoint, and opencode resolves TUI-kind plugins through a separate config file dedicated to TUI settings, independent from the main `opencode.json`. Use the global one (`~/.config/opencode/tui.json`) so it's available in every project, or a project-level `tui.json` if you only want it there:
+1. Open the command palette (`ctrl+p`) inside opencode and select **Install plugin**. Type `opencode-subagents-view` as the package name, choose local or global scope (global makes it available in every project), and confirm.
+
+   This installs the package and writes the matching entry into `tui.json` for you (global `~/.config/opencode/tui.json`, or a project-level `tui.json` if you chose local scope). It also loads the plugin in the current session immediately, no restart needed. This is the way this plugin is actually tested and verified working, starting from a completely clean state.
+
+   If you'd rather edit `tui.json` yourself instead (for example to review the exact change first), the equivalent manual entry is:
 
    ```json
    {
@@ -14,9 +18,9 @@ A terminal UI plugin for OpenCode that adds a live "Subagents" panel to the sess
    }
    ```
 
-2. Quit and restart opencode. Config and plugins are only read at startup, so a running session won't pick up the change.
+   This plugin only exports a `tui` entrypoint, and opencode resolves TUI-kind plugins through a separate config file dedicated to TUI settings, independent from the main `opencode.json`. If you go this route instead of the command palette, quit and restart opencode afterward, since config and plugins are only read at startup.
 
-3. Confirm it actually loaded (not just that config accepted it) by opening the command palette (`ctrl+p`) and selecting **Plugins**. Look for `subagents-view` under "External" with a green **active** status.
+2. Confirm it actually loaded (not just that config accepted it) by opening the command palette (`ctrl+p`) and selecting **Plugins**. Look for `subagents-view` under "External" with a green **active** status.
 
    Note: `opencode debug info` is **not** a reliable check for this. It only echoes what the config declares, not whether the plugin actually resolved and loaded at runtime, so it can report success even when nothing actually loaded.
 
