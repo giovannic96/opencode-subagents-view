@@ -1,7 +1,7 @@
 // This is the package's real "./tui" entrypoint. It intentionally does not
 // statically import solid-js or @opentui/solid itself (see below), and
 // contains no plugin logic of its own. The actual implementation lives in
-// src/tui-runtime.tsx.
+// src/plugin.tsx.
 //
 // Why this file exists: solid-js publishes a conditional `exports` map with
 // a "node" condition that points at its non-reactive SSR build. Bun matches
@@ -64,8 +64,8 @@ function patchSolidJsExports(): void {
 
 patchSolidJsExports()
 
-const runtime = await import("./tui-runtime")
+const impl = await import("./plugin")
 
-export const getOrCreateChildSessions = runtime.getOrCreateChildSessions
-export const getOrCreateChildSessionsCollapsed = runtime.getOrCreateChildSessionsCollapsed
-export default runtime.default
+export const getOrCreateChildSessions = impl.getOrCreateChildSessions
+export const getOrCreateChildSessionsCollapsed = impl.getOrCreateChildSessionsCollapsed
+export default impl.default
