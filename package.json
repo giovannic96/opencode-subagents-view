@@ -1,6 +1,6 @@
 {
   "name": "opencode-subagents-view",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Terminal UI plugin for OpenCode that adds a live \"Subagents\" panel to the session sidebar. Unofficial, not affiliated with the OpenCode team.",
   "type": "module",
   "license": "MIT",
