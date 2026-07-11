@@ -3,9 +3,24 @@ A terminal UI plugin for OpenCode that adds a live "Subagents" panel to the sess
 
 ## Installation
 
-> **Status**: not yet published to npm. Use the "from source" instructions below for now.
+### From npm
 
-### From source (current)
+1. Register it in a **`tui.json`** (or `tui.jsonc`) file, not `opencode.json`, using the package name. This plugin only exports a `tui` entrypoint, and opencode resolves TUI-kind plugins through a separate config file dedicated to TUI settings, independent from the main `opencode.json`. Use the global one (`~/.config/opencode/tui.json`) so it's available in every project, or a project-level `tui.json` if you only want it there:
+
+   ```json
+   {
+     "$schema": "https://opencode.ai/config.json",
+     "plugin": ["opencode-subagents-view"]
+   }
+   ```
+
+2. Quit and restart opencode. Config and plugins are only read at startup, so a running session won't pick up the change.
+
+3. Confirm it actually loaded (not just that config accepted it) by opening the command palette (`ctrl+p`) and selecting **Plugins**. Look for `subagents-view` under "External" with a green **active** status.
+
+   Note: `opencode debug info` is **not** a reliable check for this. It only echoes what the config declares, not whether the plugin actually resolved and loaded at runtime, so it can report success even when nothing actually loaded.
+
+### From source (for development)
 
 1. Clone this repo somewhere on your machine, e.g.:
 
@@ -20,9 +35,9 @@ A terminal UI plugin for OpenCode that adds a live "Subagents" panel to the sess
    npm install
    ```
 
-   This also runs a `postinstall` script (`scripts/fix-solid-js-exports.mjs`) that patches a Bun-specific module resolution issue in `solid-js` (see [Why this plugin patches solid-js's exports](#why-this-plugin-patches-solid-jss-exports) below). Without it, the panel will compute correctly internally but never actually update on screen.
+   This also runs the same `postinstall` script described above.
 
-3. Register it in a **`tui.json`** (or `tui.jsonc`) file, not `opencode.json`. This plugin only exports a `tui` entrypoint, and opencode resolves TUI-kind plugins through a separate config file dedicated to TUI settings, independent from the main `opencode.json`. Use the global one (`~/.config/opencode/tui.json`) so it's available in every project, or a project-level `tui.json` if you only want it there:
+3. Register it in `tui.json`/`tui.jsonc` using the absolute path to this folder instead of the package name:
 
    ```json
    {
@@ -35,22 +50,7 @@ A terminal UI plugin for OpenCode that adds a live "Subagents" panel to the sess
    - Dropping this folder into `.opencode/plugins/` (or `~/.config/opencode/plugins/`) will **not** work on its own, since opencode's auto-discovery for that folder only picks up bare `.ts`/`.js` files, not a package-shaped directory like this one.
    - Putting the `plugin` entry in `opencode.json` instead of `tui.json` also will not work: that only affects server-side plugin loading. TUI-kind plugins (like this one) are resolved by a separate config pipeline that reads `tui.json`/`tui.jsonc` specifically.
 
-4. Quit and restart opencode. Config and plugins are only read at startup, so a running session won't pick up the change.
-
-5. Confirm it actually loaded (not just that config accepted it) by opening the command palette (`ctrl+p`) and selecting **Plugins**. Look for `subagents-view` under "External" with a green **active** status.
-
-   Note: `opencode debug info` is **not** a reliable check for this. It only echoes what the config declares, not whether the plugin actually resolved and loaded at runtime, so it can report success even when nothing actually loaded.
-
-### From npm (once published)
-
-Same caveat applies: put this in `tui.json`/`tui.jsonc`, not `opencode.json`.
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-subagents-view"]
-}
-```
+4. Quit and restart opencode, then confirm it loaded the same way as in the npm instructions above.
 
 ## How it works
 
