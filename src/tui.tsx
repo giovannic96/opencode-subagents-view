@@ -29,7 +29,7 @@
 // Both fixes live directly in this module's own load path, which
 // guarantees they run every time this plugin loads, regardless of how or
 // where it was installed, with no separate install-time step at all.
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -94,9 +94,26 @@ function vendorImplementationOutsideNodeModules(packageRoot: string, version: st
   // solid-js/@opentui/solid/@opentui/core are installed as siblings of this
   // package, not nested inside it), so the vendored copy still resolves its
   // dependencies normally, unaffected by moving out of node_modules itself.
+  //
+  // A previous run could have left a symlink here already, correct (same
+  // parent, safe to reuse), stale (pointing at a since-removed install of a
+  // different copy of this same version, e.g. from local testing), or
+  // broken (target no longer exists at all). readlinkSync surfaces all of
+  // those without following the link the way existsSync would (which
+  // reports false for a broken symlink even though something is still
+  // there), so a stale or broken one can be replaced instead of silently
+  // left in place.
   const vendorNodeModules = join(vendorDir, "node_modules")
-  if (!existsSync(vendorNodeModules)) {
-    symlinkSync(dirname(packageRoot), vendorNodeModules)
+  const desiredTarget = dirname(packageRoot)
+  let currentTarget: string | undefined
+  try {
+    currentTarget = readlinkSync(vendorNodeModules)
+  } catch {
+    currentTarget = undefined
+  }
+  if (currentTarget !== desiredTarget) {
+    rmSync(vendorNodeModules, { force: true })
+    symlinkSync(desiredTarget, vendorNodeModules)
   }
 
   return join(vendorSrcDir, "plugin.tsx")
