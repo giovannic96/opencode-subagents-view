@@ -1,4 +1,4 @@
-# opencode-subagent-view
+# opencode-subagents-view
 A terminal UI plugin for OpenCode that adds a live "Subagents" panel to the session sidebar, showing a colored status icon and label for each tracked child session. Unofficial community project, not affiliated with the OpenCode team.
 
 ## Installation
@@ -10,13 +10,13 @@ A terminal UI plugin for OpenCode that adds a live "Subagents" panel to the sess
 1. Clone this repo somewhere on your machine, e.g.:
 
    ```bash
-   git clone git@github.com:giovannic96/opencode-subagent-view.git ~/repos/personal/opencode-subagent-view
+   git clone git@github.com:giovannic96/opencode-subagents-view.git ~/repos/personal/opencode-subagents-view
    ```
 
 2. Install its dependencies:
 
    ```bash
-   cd ~/repos/personal/opencode-subagent-view
+   cd ~/repos/personal/opencode-subagents-view
    npm install
    ```
 
@@ -27,7 +27,7 @@ A terminal UI plugin for OpenCode that adds a live "Subagents" panel to the sess
    ```json
    {
      "$schema": "https://opencode.ai/config.json",
-     "plugin": ["/absolute/path/to/opencode-subagent-view"]
+     "plugin": ["/absolute/path/to/opencode-subagents-view"]
    }
    ```
 
@@ -48,7 +48,7 @@ Same caveat applies: put this in `tui.json`/`tui.jsonc`, not `opencode.json`.
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-subagent-view"]
+  "plugin": ["opencode-subagents-view"]
 }
 ```
 
@@ -143,7 +143,7 @@ That's the right choice for a typical Node.js backend, but wrong here: this plug
 
 The symptom, if this isn't patched, is subtle and confusing: `createSignal`, `createEffect`, and `createMemo` all still exist and don't throw, but nothing created with them ever updates after the initial render, because the resolved `solid-js` build's `createEffect` is a literal no-op and its signals don't notify subscribers.
 
-`scripts/fix-solid-js-exports.mjs` removes that `"node"` condition from `solid-js`'s own `package.json`, and runs automatically as this plugin's `postinstall` script. It intentionally does not use [`patch-package`](https://github.com/ds300/patch-package), even though that's the more common tool for this kind of situation: `patch-package` locates the project root by walking up from `process.cwd()` until it escapes any `node_modules` folder, on the assumption that it is always running at the root of the project being installed. That assumption breaks when this plugin is installed as a nested dependency of someone else's project (exactly what happens with a plain `npm install opencode-subagent-view`): `patch-package`'s root detection walks past this plugin's own folder and lands on the consumer's project root instead, where the patch file doesn't exist, so it silently applies nothing. `scripts/fix-solid-js-exports.mjs` instead resolves `solid-js` starting from its own script location (`require.resolve("solid-js", { paths: [here] })`), which always finds the correct copy regardless of how deeply this plugin ends up nested, verified by installing this plugin as a real nested npm dependency in a separate throwaway project and confirming both the patch and the resulting reactivity work.
+`scripts/fix-solid-js-exports.mjs` removes that `"node"` condition from `solid-js`'s own `package.json`, and runs automatically as this plugin's `postinstall` script. It intentionally does not use [`patch-package`](https://github.com/ds300/patch-package), even though that's the more common tool for this kind of situation: `patch-package` locates the project root by walking up from `process.cwd()` until it escapes any `node_modules` folder, on the assumption that it is always running at the root of the project being installed. That assumption breaks when this plugin is installed as a nested dependency of someone else's project (exactly what happens with a plain `npm install opencode-subagents-view`): `patch-package`'s root detection walks past this plugin's own folder and lands on the consumer's project root instead, where the patch file doesn't exist, so it silently applies nothing. `scripts/fix-solid-js-exports.mjs` instead resolves `solid-js` starting from its own script location (`require.resolve("solid-js", { paths: [here] })`), which always finds the correct copy regardless of how deeply this plugin ends up nested, verified by installing this plugin as a real nested npm dependency in a separate throwaway project and confirming both the patch and the resulting reactivity work.
 
 This plugin also intentionally does **not** bundle `solid-js` or `@opentui/solid` into a single prebuilt file as an alternative fix. An earlier version of this plugin tried that, and it broke the sidebar entirely: `@opentui/solid`'s renderer relies on `useContext(RendererContext)` to reach the terminal renderer that opencode's host process provides, and a bundled copy of `@opentui/solid` carries its own private `createContext`/`useContext` instance, one that is a different object identity than whatever context the host actually populates. The result was a silent "No renderer found" failure with nothing rendered, and no visible error. Keeping `solid-js` and `@opentui/solid` as regular, unbundled dependencies means this plugin's JSX resolves through the exact same module instances the host and other plugins already share, so `useContext` correctly sees the host's renderer.
 

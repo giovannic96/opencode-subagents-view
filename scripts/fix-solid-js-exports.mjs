@@ -39,7 +39,7 @@ function findSolidJsPackageJson() {
 
 const pkgPath = findSolidJsPackageJson()
 if (!pkgPath) {
-  console.warn("[opencode-subagent-view] Could not locate solid-js to patch its exports. The Subagents sidebar may not update.")
+  console.warn("[opencode-subagents-view] Could not locate solid-js to patch its exports. The Subagents sidebar may not update.")
   process.exit(0)
 }
 
@@ -49,7 +49,7 @@ const mainExport = pkg.exports?.["."]
 if (mainExport && typeof mainExport === "object" && "node" in mainExport) {
   delete mainExport.node
   writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
-  console.log(`[opencode-subagent-view] Patched solid-js exports at ${pkgPath}`)
+  console.log(`[opencode-subagents-view] Patched solid-js exports at ${pkgPath}`)
 } else {
-  console.log(`[opencode-subagent-view] solid-js exports already OK at ${pkgPath}`)
+  console.log(`[opencode-subagents-view] solid-js exports already OK at ${pkgPath}`)
 }
