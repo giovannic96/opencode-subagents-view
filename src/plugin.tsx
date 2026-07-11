@@ -1,19 +1,4 @@
 /** @jsxImportSource @opentui/solid */
-// The actual plugin implementation. Kept separate from src/tui.tsx (the
-// package's real "./tui" entrypoint) so that src/tui.tsx can synchronously
-// patch solid-js's exports *before* this file's static imports of solid-js
-// and @opentui/solid are evaluated. See src/tui.tsx and README ("Why this
-// plugin patches solid-js's exports at runtime") for why.
-//
-// The `@jsxImportSource` pragma above is required in addition to (not
-// instead of) this project's own tsconfig.json: Bun does not apply a
-// project's tsconfig.json to files resolved from inside a node_modules
-// folder, which is where this plugin's own files always end up once
-// installed for real, whether via a plain `npm install` or via opencode's
-// own "Install Plugin" command. The per-file pragma works regardless of
-// where the file is resolved from, since it's read directly from the file
-// itself rather than looked up externally. See README ("Why this plugin
-// pins its own JSX import source").
 
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { For, createSignal, Show } from "solid-js"
