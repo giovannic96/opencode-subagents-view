@@ -37,7 +37,7 @@ A terminal UI plugin for OpenCode that adds a live "Subagents" panel to the sess
 
 4. Quit and restart opencode. Config and plugins are only read at startup, so a running session won't pick up the change.
 
-5. Confirm it actually loaded (not just that config accepted it) by opening the command palette (`ctrl+p`) and selecting **Plugins**. Look for `subagent-view` under "External" with a green **active** status.
+5. Confirm it actually loaded (not just that config accepted it) by opening the command palette (`ctrl+p`) and selecting **Plugins**. Look for `subagents-view` under "External" with a green **active** status.
 
    Note: `opencode debug info` is **not** a reliable check for this. It only echoes what the config declares, not whether the plugin actually resolved and loaded at runtime, so it can report success even when nothing actually loaded.
 

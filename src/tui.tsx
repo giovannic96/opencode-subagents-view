@@ -9,7 +9,7 @@ import {
 } from "./labels-ui"
 import type { ChildSessionRecords } from "./child-sessions-types"
 
-const id = "subagent-view"
+const id = "subagents-view"
 
 // Cached per session id instead of created fresh per render: repeated render
 // calls must reuse existing state, not restart it. See README ("A real bug
